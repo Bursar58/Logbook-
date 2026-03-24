@@ -1,0 +1,1799 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Boot Logbuch">
+<meta name="description" content="Motorboot Logbuch — Fahrten, Motor, Pegelstand, Wetter">
+<meta name="theme-color" content="#0a1628">
+<title>Boot Logbuch</title>
+
+<!-- PWA MANIFEST inline als data-URI -->
+<link rel="manifest" href="data:application/manifest+json,{
+  %22name%22:%22Boot%20Logbuch%22,
+  %22short_name%22:%22Logbuch%22,
+  %22description%22:%22Motorboot%20Logbuch%20f%C3%BCr%20Binnengewässer%22,
+  %22start_url%22:%22.%22,
+  %22display%22:%22standalone%22,
+  %22background_color%22:%22%230a1628%22,
+  %22theme_color%22:%22%230a1628%22,
+  %22orientation%22:%22portrait%22,
+  %22icons%22:[{%22src%22:%22data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20512%20512'%3E%3Crect%20width='512'%20height='512'%20rx='80'%20fill='%230a1628'/%3E%3Ctext%20y='380'%20x='80'%20font-size='380'%3E⚓%3C/text%3E%3C/svg%3E%22,%22sizes%22:%22512x512%22,%22type%22:%22image/svg+xml%22,%22purpose%22:%22any%20maskable%22}]
+}">
+
+<!-- Apple touch icon inline SVG -->
+<link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' rx='80' fill='%230a1628'/><text y='380' x='80' font-size='380'>⚓</text></svg>">
+
+<!-- Fonts with display=swap for offline fallback -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Mono:wght@400;700&family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+
+<!-- Leaflet CSS -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<!-- SERVICE WORKER registration -->
+<script>
+if ('serviceWorker' in navigator) {
+  const swCode = `
+const CACHE = 'bootlog-v2';
+const PRECACHE = [
+  'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
+  'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
+  'https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Mono:wght@400;700&family=Inter:wght@300;400;600&display=swap',
+  'https://a.tile.openstreetmap.org/10/549/335.png',
+];
+
+self.addEventListener('install', e => {
+  e.waitUntil(
+    caches.open(CACHE).then(c => c.addAll(PRECACHE).catch(() => {}))
+  );
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', e => {
+  e.waitUntil(caches.keys().then(keys =>
+    Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
+  ));
+  self.clients.claim();
+});
+
+self.addEventListener('fetch', e => {
+  // Cache-first for tiles and static assets, network-first for API calls
+  const url = e.request.url;
+  if (url.includes('pegelonline') || url.includes('open-meteo') || url.includes('openseamap')) {
+    e.respondWith(fetch(e.request).catch(() => caches.match(e.request)));
+  } else {
+    e.respondWith(
+      caches.match(e.request).then(cached => cached || fetch(e.request).then(resp => {
+        if (resp && resp.status === 200) {
+          const clone = resp.clone();
+          caches.open(CACHE).then(c => c.put(e.request, clone));
+        }
+        return resp;
+      }))
+    );
+  }
+});
+  `;
+  const blob = new Blob([swCode], {type: 'application/javascript'});
+  const swUrl = URL.createObjectURL(blob);
+  navigator.serviceWorker.register(swUrl, {scope: '/'}).catch(() => {});
+}
+</script>
+<style>
+  :root {
+    --navy: #0a1628;
+    --deep: #0d1f3c;
+    --mid: #1a3458;
+    --teal: #00b4d8;
+    --teal-bright: #48cae4;
+    --amber: #f4a261;
+    --red: #e63946;
+    --green: #2dc653;
+    --text: #e8f4f8;
+    --muted: #7a9bb5;
+    --card: rgba(255,255,255,0.05);
+    --card-border: rgba(0,180,216,0.2);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+  body {
+    background: var(--navy);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+    background-image:
+      radial-gradient(ellipse at 20% 0%, rgba(0,180,216,0.08) 0%, transparent 60%),
+      radial-gradient(ellipse at 80% 100%, rgba(0,60,120,0.3) 0%, transparent 60%);
+  }
+
+  /* NAV */
+  nav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    background: rgba(10,22,40,0.92);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--card-border);
+    display: flex; justify-content: space-around;
+    padding: 0;
+  }
+  nav button {
+    flex: 1; background: none; border: none; color: var(--muted);
+    font-family: 'Space Mono', monospace; font-size: 9px; letter-spacing: 1px;
+    padding: 12px 4px 10px;
+    cursor: pointer; transition: all 0.2s;
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    text-transform: uppercase;
+  }
+  nav button .icon { font-size: 20px; }
+  nav button.active { color: var(--teal); }
+  nav button:active { opacity: 0.7; }
+
+  /* PAGES */
+  .page { display: none; padding: 80px 16px 24px; min-height: 100vh; }
+  .page.active { display: block; }
+
+  /* HEADER */
+  .page-title {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 36px; letter-spacing: 3px;
+    color: var(--teal); margin-bottom: 4px;
+  }
+  .page-sub { color: var(--muted); font-size: 12px; letter-spacing: 1px; margin-bottom: 24px; }
+
+  /* STATUS BAR */
+  .status-bar {
+    background: var(--card); border: 1px solid var(--card-border);
+    border-radius: 12px; padding: 14px 16px;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+    margin-bottom: 16px;
+  }
+  .status-item { display: flex; flex-direction: column; gap: 2px; }
+  .status-label { font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); font-family: 'Space Mono', monospace; }
+  .status-value { font-family: 'Space Mono', monospace; font-size: 14px; font-weight: 700; }
+  .status-value.on { color: var(--green); }
+  .status-value.off { color: var(--muted); }
+  .status-value.active { color: var(--amber); }
+
+  /* BIG BUTTONS */
+  .big-btn {
+    width: 100%; border: none; border-radius: 16px;
+    font-family: 'Bebas Neue', sans-serif; font-size: 22px; letter-spacing: 3px;
+    padding: 20px; cursor: pointer; transition: all 0.15s;
+    display: flex; align-items: center; justify-content: center; gap: 12px;
+    margin-bottom: 12px; position: relative; overflow: hidden;
+  }
+  .big-btn:active { transform: scale(0.97); }
+  .big-btn::after {
+    content: ''; position: absolute; inset: 0;
+    background: rgba(255,255,255,0.08);
+    opacity: 0; transition: opacity 0.1s;
+  }
+  .big-btn:active::after { opacity: 1; }
+
+  .btn-engine-on { background: linear-gradient(135deg, #1a4a1a, #2dc653); color: #fff; box-shadow: 0 4px 20px rgba(45,198,83,0.3); }
+  .btn-engine-off { background: linear-gradient(135deg, #4a1a1a, #e63946); color: #fff; box-shadow: 0 4px 20px rgba(230,57,70,0.3); }
+  .btn-trip-start { background: linear-gradient(135deg, #1a3a4a, #00b4d8); color: #fff; box-shadow: 0 4px 20px rgba(0,180,216,0.3); }
+  .btn-trip-end { background: linear-gradient(135deg, #3a2a0a, #f4a261); color: #fff; box-shadow: 0 4px 20px rgba(244,162,97,0.3); }
+  .btn-disabled { opacity: 0.35; cursor: not-allowed; }
+
+  /* SECTION */
+  .section { margin-bottom: 20px; }
+  .section-title {
+    font-family: 'Space Mono', monospace; font-size: 10px;
+    letter-spacing: 2px; text-transform: uppercase; color: var(--muted);
+    margin-bottom: 10px; padding-bottom: 6px;
+    border-bottom: 1px solid var(--card-border);
+  }
+
+  /* FUEL */
+  .fuel-section {
+    background: var(--card); border: 1px solid var(--card-border);
+    border-radius: 12px; padding: 16px; margin-bottom: 16px;
+  }
+  .fuel-bar-bg {
+    background: rgba(255,255,255,0.07); border-radius: 8px;
+    height: 20px; margin: 10px 0; overflow: hidden;
+    position: relative;
+  }
+  .fuel-bar {
+    height: 100%; border-radius: 8px; transition: width 0.4s, background 0.4s;
+    background: linear-gradient(90deg, var(--teal), var(--green));
+  }
+  .fuel-bar.low { background: linear-gradient(90deg, var(--amber), var(--red)); }
+  .fuel-row { display: flex; justify-content: space-between; align-items: center; }
+  .fuel-value { font-family: 'Space Mono', monospace; font-size: 20px; font-weight: 700; color: var(--teal); }
+  input[type=range] {
+    width: 100%; accent-color: var(--teal);
+    height: 6px; cursor: pointer;
+  }
+
+  /* CREW */
+  .crew-input-row { display: flex; gap: 8px; margin-bottom: 10px; }
+  input[type=text], textarea {
+    background: rgba(255,255,255,0.06); border: 1px solid var(--card-border);
+    color: var(--text); border-radius: 10px; padding: 12px;
+    font-family: 'Inter', sans-serif; font-size: 14px;
+    outline: none; transition: border-color 0.2s;
+  }
+  input[type=text]:focus, textarea:focus { border-color: var(--teal); }
+  .crew-add-btn {
+    background: var(--teal); border: none; color: var(--navy);
+    border-radius: 10px; padding: 12px 16px; font-size: 18px;
+    cursor: pointer; flex-shrink: 0; font-weight: 700;
+  }
+  .crew-list { display: flex; flex-wrap: wrap; gap: 8px; }
+  .crew-tag {
+    background: rgba(0,180,216,0.15); border: 1px solid rgba(0,180,216,0.3);
+    border-radius: 20px; padding: 6px 12px; font-size: 13px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .crew-tag button { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 14px; padding: 0; }
+
+  /* LOG ENTRIES */
+  .log-entry {
+    background: var(--card); border: 1px solid var(--card-border);
+    border-radius: 12px; padding: 14px; margin-bottom: 10px;
+  }
+  .log-time { font-family: 'Space Mono', monospace; font-size: 11px; color: var(--teal); margin-bottom: 6px; }
+  .log-event { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+  .log-detail { font-size: 12px; color: var(--muted); }
+
+  /* TRIPS LIST */
+  .trip-card {
+    background: var(--card); border: 1px solid var(--card-border);
+    border-radius: 14px; padding: 16px; margin-bottom: 12px; cursor: pointer;
+    transition: border-color 0.2s;
+  }
+  .trip-card:active { border-color: var(--teal); }
+  .trip-card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
+  .trip-date { font-family: 'Space Mono', monospace; font-size: 11px; color: var(--teal); }
+  .trip-duration { font-family: 'Space Mono', monospace; font-size: 11px; color: var(--amber); }
+  .trip-name { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+  .trip-meta { font-size: 12px; color: var(--muted); display: flex; gap: 12px; flex-wrap: wrap; }
+
+  /* MAP */
+  #map { height: 420px; border-radius: 14px; overflow: hidden; border: 1px solid var(--card-border); margin-top: 12px; }
+  .map-placeholder {
+    height: 300px; border-radius: 14px; border: 1px dashed var(--card-border);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    color: var(--muted); font-size: 13px; text-align: center; gap: 8px;
+    margin-top: 12px;
+  }
+  .map-placeholder .icon { font-size: 40px; }
+
+  /* TRACK STATS PANEL */
+  .track-stats {
+    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;
+    margin-top: 12px;
+  }
+  .track-stat {
+    background: var(--card); border: 1px solid var(--card-border);
+    border-radius: 10px; padding: 10px; text-align: center;
+  }
+  .track-stat-label { font-size: 8px; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); font-family: 'Space Mono', monospace; margin-bottom: 4px; }
+  .track-stat-val { font-family: 'Space Mono', monospace; font-size: 15px; font-weight: 700; color: var(--teal-bright); }
+
+  /* SPEED LEGEND */
+  .speed-legend {
+    margin-top: 10px; background: var(--card); border: 1px solid var(--card-border);
+    border-radius: 10px; padding: 10px 14px;
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  }
+  .speed-legend-label { font-size: 9px; color: var(--muted); font-family: 'Space Mono', monospace; text-transform: uppercase; letter-spacing: 1px; }
+  .speed-gradient {
+    flex: 1; height: 8px; border-radius: 4px; min-width: 80px;
+    background: linear-gradient(90deg, #2dc653, #00b4d8, #f4a261, #e63946);
+  }
+  .speed-legend-ends { display: flex; justify-content: space-between; font-size: 9px; color: var(--muted); font-family: 'Space Mono', monospace; }
+
+  /* MAP LAYER TOGGLE */
+  .map-layer-btns { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  .layer-btn {
+    background: var(--card); border: 1px solid var(--card-border);
+    color: var(--muted); border-radius: 8px; padding: 6px 12px;
+    font-size: 11px; font-family: 'Space Mono', monospace; cursor: pointer;
+    transition: all 0.2s;
+  }
+  .layer-btn.active { border-color: var(--teal); color: var(--teal); background: rgba(0,180,216,0.1); }
+
+  /* NOTES */
+  textarea { width: 100%; resize: vertical; min-height: 80px; }
+
+  /* TIMER */
+  .timer-display {
+    font-family: 'Space Mono', monospace; font-size: 28px; font-weight: 700;
+    color: var(--amber); text-align: center; padding: 10px 0;
+  }
+
+  /* PULSE ANIMATION */
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+  .pulse { animation: pulse 1.5s infinite; }
+
+  /* COORDS */
+  .coord-badge {
+    background: rgba(0,180,216,0.1); border: 1px solid var(--card-border);
+    border-radius: 8px; padding: 6px 10px;
+    font-family: 'Space Mono', monospace; font-size: 10px; color: var(--muted);
+    text-align: center; margin-top: 8px;
+  }
+
+  /* WEATHER */
+  .weather-card {
+    background: var(--card); border: 1px solid var(--card-border);
+    border-radius: 14px; padding: 16px; margin-bottom: 16px;
+    position: relative; overflow: hidden;
+  }
+  .weather-card::before {
+    content: ''; position: absolute; top: -30px; right: -30px;
+    width: 100px; height: 100px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(0,180,216,0.1), transparent 70%);
+  }
+  .weather-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
+  .weather-icon { font-size: 44px; line-height: 1; }
+  .weather-temp { font-family: 'Bebas Neue', sans-serif; font-size: 48px; color: var(--teal); line-height: 1; }
+  .weather-desc { font-size: 13px; color: var(--text); font-weight: 600; margin-bottom: 2px; }
+  .weather-loc { font-size: 11px; color: var(--muted); font-family: 'Space Mono', monospace; }
+  .weather-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 10px; }
+  .weather-stat { background: rgba(255,255,255,0.04); border-radius: 8px; padding: 8px; text-align: center; }
+  .weather-stat-label { font-size: 8px; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); font-family: 'Space Mono', monospace; margin-bottom: 4px; }
+  .weather-stat-val { font-family: 'Space Mono', monospace; font-size: 13px; font-weight: 700; color: var(--teal-bright); }
+  .weather-refresh { background: none; border: 1px solid var(--card-border); color: var(--muted); border-radius: 8px; padding: 4px 10px; font-size: 11px; font-family: 'Space Mono', monospace; cursor: pointer; margin-top: 10px; }
+  .weather-refresh:active { opacity: 0.6; }
+  .weather-loading { text-align: center; padding: 20px; color: var(--muted); font-family: 'Space Mono', monospace; font-size: 12px; }
+  .weather-error { text-align: center; padding: 16px; color: var(--amber); font-size: 12px; }
+  .weather-alert { background: rgba(244,162,97,0.1); border: 1px solid rgba(244,162,97,0.3); border-radius: 8px; padding: 8px 10px; margin-top: 8px; font-size: 11px; color: var(--amber); display: flex; gap: 6px; align-items: flex-start; }
+
+  /* PEGELSTAND */
+  .pegel-card {
+    background: var(--card); border: 1px solid var(--card-border);
+    border-radius: 14px; padding: 16px; margin-bottom: 16px;
+    position: relative; overflow: hidden;
+  }
+  .pegel-card::before {
+    content: ''; position: absolute; bottom: 0; left: 0; right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--teal), var(--teal-bright));
+    border-radius: 0 0 14px 14px;
+  }
+  .pegel-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
+  .pegel-name { font-size: 15px; font-weight: 700; color: var(--text); }
+  .pegel-river { font-size: 10px; color: var(--muted); font-family: 'Space Mono', monospace; letter-spacing: 1px; text-transform: uppercase; margin-top: 2px; }
+  .pegel-value { font-family: 'Bebas Neue', sans-serif; font-size: 52px; line-height: 1; color: var(--teal); text-align: right; }
+  .pegel-unit { font-family: 'Space Mono', monospace; font-size: 12px; color: var(--muted); text-align: right; margin-top: -4px; }
+  .pegel-trend { font-size: 20px; }
+  .pegel-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 10px; }
+  .pegel-stat { background: rgba(255,255,255,0.04); border-radius: 8px; padding: 8px; text-align: center; }
+  .pegel-stat-label { font-size: 8px; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); font-family: 'Space Mono', monospace; margin-bottom: 4px; }
+  .pegel-stat-val { font-family: 'Space Mono', monospace; font-size: 12px; font-weight: 700; color: var(--teal-bright); }
+  .pegel-tide {
+    margin-top: 10px; display: flex; gap: 8px;
+  }
+  .tide-item {
+    flex: 1; background: rgba(255,255,255,0.04); border-radius: 8px;
+    padding: 8px 10px; text-align: center;
+  }
+  .tide-type { font-size: 16px; margin-bottom: 2px; }
+  .tide-label { font-size: 9px; color: var(--muted); font-family: 'Space Mono', monospace; text-transform: uppercase; letter-spacing: 1px; }
+  .tide-time { font-family: 'Space Mono', monospace; font-size: 13px; font-weight: 700; color: var(--amber); margin-top: 2px; }
+  .tide-val { font-size: 10px; color: var(--muted); font-family: 'Space Mono', monospace; }
+  .pegel-warn { background: rgba(230,57,70,0.1); border: 1px solid rgba(230,57,70,0.3); border-radius: 8px; padding: 8px 10px; margin-top: 8px; font-size: 11px; color: var(--red); }
+  .pegel-low { color: var(--amber) !important; }
+  .pegel-high { color: var(--red) !important; }
+  .pegel-loading { text-align: center; padding: 20px; color: var(--muted); font-family: 'Space Mono', monospace; font-size: 12px; }
+
+  .empty-state { text-align: center; padding: 40px 20px; color: var(--muted); font-size: 14px; }
+  .empty-state .icon { font-size: 48px; margin-bottom: 12px; display: block; }
+
+  /* NOTES MODAL */
+  .modal-overlay {
+    display: none; position: fixed; inset: 0; z-index: 500;
+    background: rgba(0,0,0,0.7); backdrop-filter: blur(4px);
+    align-items: flex-end; justify-content: center;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: var(--deep); border: 1px solid var(--card-border);
+    border-radius: 20px 20px 0 0; padding: 20px 16px 32px;
+    width: 100%; max-height: 85vh; overflow-y: auto;
+  }
+  .modal-handle {
+    width: 40px; height: 4px; background: rgba(255,255,255,0.15);
+    border-radius: 2px; margin: 0 auto 16px;
+  }
+  .modal-title {
+    font-family: 'Bebas Neue', sans-serif; font-size: 24px;
+    letter-spacing: 2px; color: var(--teal); margin-bottom: 16px;
+  }
+  .note-entry {
+    background: var(--card); border: 1px solid var(--card-border);
+    border-radius: 12px; padding: 12px; margin-bottom: 10px;
+    position: relative;
+  }
+  .note-time { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--teal); margin-bottom: 4px; }
+  .note-text { font-size: 14px; line-height: 1.5; }
+  .note-pos { font-size: 10px; color: var(--muted); margin-top: 4px; font-family: 'Space Mono', monospace; }
+  .note-delete { position: absolute; top: 10px; right: 10px; background: none; border: none; color: var(--muted); cursor: pointer; font-size: 14px; }
+  .note-input-area { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+  .note-add-btn {
+    background: linear-gradient(135deg, #1a3a4a, #00b4d8);
+    border: none; color: #fff; border-radius: 12px; padding: 14px;
+    font-family: 'Bebas Neue', sans-serif; font-size: 18px; letter-spacing: 2px;
+    cursor: pointer;
+  }
+  .modal-close {
+    width: 100%; background: rgba(255,255,255,0.06); border: 1px solid var(--card-border);
+    color: var(--muted); border-radius: 12px; padding: 12px;
+    font-family: 'Space Mono', monospace; font-size: 12px; cursor: pointer;
+    margin-top: 8px;
+  }
+
+  /* TRIP CARD ACTIONS */
+  .trip-actions { display: flex; gap: 8px; margin-top: 12px; }
+  .trip-action-btn {
+    flex: 1; background: rgba(255,255,255,0.05); border: 1px solid var(--card-border);
+    color: var(--teal); border-radius: 10px; padding: 8px;
+    font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: 1px;
+    cursor: pointer; text-align: center; transition: all 0.2s;
+  }
+  .trip-action-btn:active { background: rgba(0,180,216,0.15); }
+
+  /* FLOATING NOTE BUTTON (during active trip) */
+  .float-note-btn {
+    position: fixed; bottom: 80px; right: 16px; z-index: 200;
+    background: linear-gradient(135deg, #1a3458, #00b4d8);
+    border: none; border-radius: 50%; width: 56px; height: 56px;
+    font-size: 22px; cursor: pointer; display: none;
+    box-shadow: 0 4px 20px rgba(0,180,216,0.4);
+    align-items: center; justify-content: center;
+  }
+  .float-note-btn.visible { display: flex; }
+
+  .gps-btn {
+    background: var(--mid); border: 1px solid var(--card-border);
+    color: var(--teal); border-radius: 10px; padding: 10px 14px;
+    font-size: 12px; font-family: 'Space Mono', monospace;
+    cursor: pointer; display: flex; align-items: center; gap: 6px;
+    margin-bottom: 12px;
+  }
+
+  .toast {
+    position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
+    background: var(--teal); color: var(--navy);
+    padding: 10px 20px; border-radius: 20px;
+    font-family: 'Space Mono', monospace; font-size: 12px; font-weight: 700;
+    z-index: 999; opacity: 0; transition: opacity 0.3s;
+    pointer-events: none; white-space: nowrap;
+  }
+  .toast.show { opacity: 1; }
+
+  /* GPS STATUS INDICATOR */
+  .gps-status {
+    display: flex; align-items: center; gap: 6px;
+    background: var(--card); border: 1px solid var(--card-border);
+    border-radius: 10px; padding: 8px 12px;
+    font-family: 'Space Mono', monospace; font-size: 9px;
+    color: var(--muted); letter-spacing: 1px; text-transform: uppercase;
+    grid-column: span 2;
+  }
+  .gps-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: #444; flex-shrink: 0;
+    transition: background 0.4s, box-shadow 0.4s;
+  }
+  .gps-dot.standby { background: #555; box-shadow: none; }
+  .gps-dot.active  { background: var(--green); box-shadow: 0 0 8px var(--green); animation: gpsPulse 2s infinite; }
+  .gps-dot.error   { background: var(--red);   box-shadow: 0 0 8px var(--red); }
+  @keyframes gpsPulse { 0%,100%{opacity:1} 50%{opacity:0.35} }
+
+  .lock-entry { font-size: 11px; color: var(--muted); font-family: 'Space Mono', monospace; padding: 3px 0; }
+</style>
+</head>
+<body>
+
+<!-- OFFLINE BANNER -->
+<div id="offline-banner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:999;background:#e63946;color:#fff;text-align:center;padding:8px;font-family:'Space Mono',monospace;font-size:11px;letter-spacing:1px">
+  📵 OFFLINE — Karte & Live-Daten nicht verfügbar
+</div>
+
+<!-- INSTALL PROMPT -->
+<div id="install-banner" style="display:none;position:fixed;bottom:70px;left:12px;right:12px;z-index:998;background:linear-gradient(135deg,#0d1f3c,#1a3458);border:1px solid rgba(0,180,216,0.4);border-radius:14px;padding:14px 16px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
+  <div style="display:flex;justify-content:space-between;align-items:center">
+    <div>
+      <div style="font-family:'Bebas Neue',sans-serif;font-size:18px;color:#00b4d8;letter-spacing:2px">⚓ ALS APP INSTALLIEREN</div>
+      <div style="font-size:11px;color:#7a9bb5;margin-top:2px">Zum Startbildschirm hinzufügen</div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button onclick="installApp()" style="background:#00b4d8;border:none;color:#0a1628;border-radius:8px;padding:8px 14px;font-family:'Space Mono',monospace;font-size:11px;font-weight:700;cursor:pointer">INSTALLIEREN</button>
+      <button onclick="document.getElementById('install-banner').style.display='none'" style="background:none;border:1px solid rgba(255,255,255,0.2);color:#7a9bb5;border-radius:8px;padding:8px 10px;font-size:11px;cursor:pointer">✕</button>
+    </div>
+  </div>
+</div>
+
+<nav>
+  <button class="active" onclick="showPage('dashboard')" id="nav-dashboard">
+    <span class="icon">⚓</span>BRÜCKE
+  </button>
+  <button onclick="showPage('trip')" id="nav-trip">
+    <span class="icon">🧭</span>FAHRT
+  </button>
+  <button onclick="showPage('map')" id="nav-map">
+    <span class="icon">🗺️</span>KARTE
+  </button>
+  <button onclick="showPage('log')" id="nav-log">
+    <span class="icon">📋</span>LOGBUCH
+  </button>
+</nav>
+
+<div id="toast" class="toast"></div>
+
+<!-- FLOATING NOTE BUTTON (visible during active trip) -->
+<button class="float-note-btn" id="float-note-btn" onclick="openNotesModal(null)" title="Notiz hinzufügen">📝</button>
+
+<!-- NOTES MODAL -->
+<div class="modal-overlay" id="notes-modal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">📝 REISENOTIZEN</div>
+    <div id="notes-list"></div>
+    <div class="note-input-area">
+      <textarea id="note-input" placeholder="Was ist passiert? z.B. Schleuse gewartet, Delphin gesichtet, Anker geworfen..." style="min-height:90px"></textarea>
+      <button class="note-add-btn" onclick="addNote()">✚ NOTIZ SPEICHERN</button>
+    </div>
+    <button class="modal-close" onclick="closeNotesModal()">✕ Schließen</button>
+  </div>
+</div>
+
+<!-- DASHBOARD -->
+<div id="page-dashboard" class="page active">
+  <div class="page-title">BRÜCKE</div>
+  <div class="page-sub">SCHIFFSFÜHRUNG</div>
+
+  <div class="status-bar">
+    <div class="status-item">
+      <span class="status-label">Motor</span>
+      <span id="st-engine" class="status-value off">■ AUS</span>
+    </div>
+    <div class="status-item">
+      <span class="status-label">Fahrt</span>
+      <span id="st-trip" class="status-value off">IM HAFEN</span>
+    </div>
+    <div class="status-item">
+      <span class="status-label">Motorlaufzeit</span>
+      <span id="st-engtime" class="status-value">—</span>
+    </div>
+    <div class="status-item">
+      <span class="status-label">Fahrtdauer</span>
+      <div id="st-triptime" class="timer-display" style="font-size:14px;text-align:left;padding:0;color:var(--amber)">—</div>
+    </div>
+  </div>
+
+  <!-- GPS STATUS ROW -->
+  <div class="gps-status" id="gps-status-badge">
+    <div class="gps-dot standby" id="gps-dot"></div>
+    <span id="gps-status-text">GPS Standby — Fahrt starten zum Aktivieren</span>
+  </div>
+
+  <button id="btn-eng-on" class="big-btn btn-engine-on" onclick="engineOn()">
+    <span>⚙️</span> MOTOR AN
+  </button>
+  <button id="btn-eng-off" class="big-btn btn-engine-off btn-disabled" onclick="engineOff()">
+    <span>🔴</span> MOTOR AUS
+  </button>
+
+  <div style="margin:8px 0 4px; border-top:1px solid var(--card-border); padding-top:16px;"></div>
+
+  <button id="btn-trip-start" class="big-btn btn-trip-start" onclick="showPage('trip')">
+    <span>⛵</span> FAHRT STARTEN
+  </button>
+  <button id="btn-trip-end" class="big-btn btn-trip-end btn-disabled" onclick="endTrip()">
+    <span>🏁</span> FAHRT BEENDEN
+  </button>
+
+  <!-- FUEL -->
+  <div class="fuel-section">
+    <div class="fuel-row">
+      <span class="section-title" style="margin:0;border:none;padding:0">⛽ KRAFTSTOFF</span>
+      <span id="fuel-pct-display" class="fuel-value">75%</span>
+    </div>
+    <div class="fuel-bar-bg">
+      <div id="fuel-bar" class="fuel-bar" style="width:75%"></div>
+    </div>
+    <input type="range" id="fuel-slider" min="0" max="100" value="75" oninput="updateFuel(this.value)">
+  </div>
+
+  <div class="coord-badge" id="gps-coords">📍 GPS: Tippen zum Orten</div>
+
+  <!-- WEATHER -->
+  <div class="section-title" style="margin-top:20px">🌤️ WETTERBEDINGUNGEN</div>
+  <div class="weather-card" id="weather-card">
+    <div class="weather-loading">⏳ Wetter wird geladen...<br><span style="font-size:10px;margin-top:4px;display:block">Standortzugriff erforderlich</span></div>
+  </div>
+
+  <!-- PEGELSTAND -->
+  <div class="section-title" style="margin-top:4px">🌊 PEGELSTAND</div>
+  <div class="pegel-card" id="pegel-card">
+    <div class="pegel-loading">⏳ Suche nächsten Pegel...</div>
+  </div>
+</div>
+
+<!-- TRIP SETUP -->
+<div id="page-trip" class="page">
+  <div class="page-title">FAHRT</div>
+  <div class="page-sub">ABFAHRTSDETAILS</div>
+
+  <div class="section">
+    <div class="section-title">Fahrtname</div>
+    <input type="text" id="trip-name" placeholder="z.B. Sonntagsausflug auf der Dove Elbe" style="width:100%">
+  </div>
+
+  <div class="section">
+    <div class="section-title">BESATZUNGSLISTE</div>
+    <div class="crew-input-row">
+      <input type="text" id="crew-input" placeholder="Person hinzufügen..." style="flex:1" onkeydown="if(event.key==='Enter')addCrew()">
+      <button class="crew-add-btn" onclick="addCrew()">+</button>
+    </div>
+    <div id="crew-list" class="crew-list"></div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">ABFAHRTSNOTIZEN</div>
+    <textarea id="trip-notes" placeholder="Wetter, Wasserstand, Abfahrtshafen..."></textarea>
+  </div>
+
+  <div class="section">
+    <div class="section-title">KRAFTSTOFF BEI ABFAHRT</div>
+    <div class="fuel-section" style="margin-bottom:0">
+      <div class="fuel-row">
+        <span style="font-size:13px;color:var(--muted)">Aktueller Stand</span>
+        <span id="fuel-at-dep" class="fuel-value">75%</span>
+      </div>
+      <div class="fuel-bar-bg">
+        <div id="fuel-bar-dep" class="fuel-bar" style="width:75%"></div>
+      </div>
+    </div>
+  </div>
+
+  <button class="big-btn btn-trip-start" style="margin-top:20px" onclick="startTrip()">
+    <span>⛵</span> JETZT ABLEGEN
+  </button>
+</div>
+
+<!-- MAP -->
+<div id="page-map" class="page">
+  <div class="page-title">KARTE</div>
+  <div class="page-sub">FAHRTENROUTEN</div>
+
+  <div id="trip-select-area"></div>
+  <div id="map-container">
+    <div class="map-placeholder">
+      <span class="icon">🗺️</span>
+      <span>Fahrt abschließen um Route anzuzeigen</span>
+      <span style="font-size:11px">GPS-Punkte werden während aktiver Fahrt aufgezeichnet</span>
+    </div>
+  </div>
+</div>
+
+<!-- LOG -->
+<div id="page-log" class="page">
+  <div class="page-title">LOGBUCH</div>
+  <div class="page-sub">FAHRTENHISTORIE</div>
+
+  <div id="trips-list">
+    <div class="empty-state">
+      <span class="icon">📋</span>
+      Noch keine Fahrten gespeichert.<br>Starte deine erste Fahrt!
+    </div>
+  </div>
+</div>
+
+<script>
+// ---- STATE ----
+let state = JSON.parse(localStorage.getItem('boatlog_state') || '{}');
+state = Object.assign({
+  engineOn: false, engineStart: null, engineHours: 0,
+  tripActive: false, tripStart: null,
+  fuel: 75, crew: [], trips: [],
+  currentTrack: [], tripName: '', tripNotes: ''
+}, state);
+
+let gpsWatcher = null;
+let timerInterval = null;
+let currentMap = null;
+
+// ---- SAVE ----
+function save() { localStorage.setItem('boatlog_state', JSON.stringify(state)); }
+
+// ---- TOAST ----
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2000);
+}
+
+// ---- FORMAT TIME ----
+function formatDuration(ms) {
+  if (!ms) return '—';
+  const s = Math.floor(ms/1000), h = Math.floor(s/3600);
+  const m = Math.floor((s%3600)/60), sec = s%60;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m ${sec}s`;
+}
+function formatTime(ts) {
+  if (!ts) return '—';
+  return new Date(ts).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+}
+function formatDate(ts) {
+  if (!ts) return '—';
+  return new Date(ts).toLocaleDateString([], {day:'2-digit', month:'short', year:'numeric'});
+}
+
+// ---- GPS STATUS ----
+function setGPSStatus(status) {
+  const dot = document.getElementById('gps-dot');
+  const text = document.getElementById('gps-status-text');
+  dot.className = 'gps-dot ' + status;
+  if (status === 'active')  text.textContent = 'GPS OK';
+  if (status === 'standby') text.textContent = 'GPS Standby';
+  if (status === 'error')   text.textContent = 'GPS Fehler';
+}
+
+// ---- GPS ----
+function startGPS() {
+  if (!navigator.geolocation) { setGPSStatus('error'); return; }
+  setGPSStatus('standby');
+  gpsWatcher = navigator.geolocation.watchPosition(pos => {
+    setGPSStatus('active');
+    const pt = { lat: pos.coords.latitude, lng: pos.coords.longitude, t: Date.now() };
+    if (state.tripActive) {
+      state.currentTrack.push(pt);
+      save();
+    }
+    document.getElementById('gps-coords').textContent =
+      `📍 ${pt.lat.toFixed(5)}, ${pt.lng.toFixed(5)}`;
+  }, err => {
+    setGPSStatus('error');
+    console.warn('GPS Fehler:', err.message);
+  }, { enableHighAccuracy: true, maximumAge: 10000 });
+}
+function stopGPS() {
+  if (gpsWatcher) navigator.geolocation.clearWatch(gpsWatcher);
+  gpsWatcher = null;
+  setGPSStatus('standby');
+}
+
+// ---- ENGINE ----
+function engineOn() {
+  if (state.engineOn) return;
+  state.engineOn = true;
+  state.engineStart = Date.now();
+  save(); updateUI();
+  logEvent('⚙️ Motor AN', `Kraftstoff: ${state.fuel}%`);
+  toast('⚙️ Motor gestartet');
+}
+function engineOff() {
+  if (!state.engineOn) return;
+  const hrs = (Date.now() - state.engineStart) / 3600000;
+  state.engineHours += hrs;
+  state.engineOn = false; state.engineStart = null;
+  save(); updateUI();
+  logEvent('🔴 Motor AUS', `Laufzeit: ${formatDuration(hrs*3600000)}`);
+  toast('🔴 Motor gestoppt');
+}
+
+// ---- TRIP ----
+function startTrip() {
+  if (state.tripActive) { showPage('dashboard'); return; }
+  state.tripActive = true;
+  state.tripStart = Date.now();
+  state.currentTrack = [];
+  state.crew = [...crew]; // from UI
+  state.tripName = document.getElementById('trip-name').value || 'Fahrt ' + (state.trips.length+1);
+  state.tripNotes = document.getElementById('trip-notes').value;
+  state.fuelAtDep = state.fuel;
+  state.weatherAtDep = state.lastWeather || null;
+
+  // Auto engine on
+  if (!state.engineOn) engineOn();
+
+  startGPS();
+  save(); updateUI();
+  logEvent('⛵ Fahrt GESTARTET', `${state.tripName} — Besatzung: ${state.crew.join(', ')||'Solo'}`);
+  toast('⛵ Fahrt begonnen!');
+  showPage('dashboard');
+}
+
+function endTrip() {
+  if (!state.tripActive) return;
+  const duration = Date.now() - state.tripStart;
+  const trip = {
+    id: Date.now(),
+    name: state.tripName,
+    notes: state.tripNotes,
+    crew: [...state.crew],
+    start: state.tripStart,
+    end: Date.now(),
+    duration,
+    fuelStart: state.fuelAtDep || state.fuel,
+    fuelEnd: state.fuel,
+    weather: state.weatherAtDep || null,
+    logNotes: state.currentNotes || [],
+    track: [...state.currentTrack]
+  };
+  state.trips.unshift(trip);
+  state.tripActive = false;
+  state.tripStart = null;
+  state.currentTrack = [];
+  state.currentNotes = [];
+
+  engineOff();
+  stopGPS();
+  save(); updateUI(); renderTrips();
+  logEvent('🏁 Fahrt BEENDET', `${trip.name} — Dauer: ${formatDuration(duration)}`);
+  toast('🏁 Fahrt gespeichert!');
+}
+
+// ---- FUEL ----
+function updateFuel(v) {
+  state.fuel = parseInt(v);
+  document.getElementById('fuel-pct-display').textContent = v+'%';
+  document.getElementById('fuel-at-dep').textContent = v+'%';
+  const bar = document.getElementById('fuel-bar');
+  const barDep = document.getElementById('fuel-bar-dep');
+  bar.style.width = v+'%';
+  barDep.style.width = v+'%';
+  bar.className = 'fuel-bar' + (v < 25 ? ' low' : '');
+  save();
+}
+
+// ---- CREW (temp) ----
+let crew = [];
+function addCrew() {
+  const inp = document.getElementById('crew-input');
+  const name = inp.value.trim();
+  if (!name) return;
+  crew.push(name); inp.value = '';
+  renderCrew();
+}
+function removeCrew(i) { crew.splice(i,1); renderCrew(); }
+function renderCrew() {
+  const el = document.getElementById('crew-list');
+  el.innerHTML = crew.map((c,i) =>
+    `<div class="crew-tag">${c}<button onclick="removeCrew(${i})">✕</button></div>`
+  ).join('');
+}
+
+// ---- LOG EVENTS ----
+let logEntries = JSON.parse(localStorage.getItem('boatlog_events') || '[]');
+function logEvent(event, detail='') {
+  logEntries.unshift({ t: Date.now(), event, detail });
+  localStorage.setItem('boatlog_events', JSON.stringify(logEntries.slice(0,200)));
+  renderLog();
+}
+function renderLog() {
+  // rendered on log page only
+}
+
+// ---- UI UPDATE ----
+function updateUI() {
+  // engine
+  const engOn = state.engineOn;
+  document.getElementById('st-engine').textContent = engOn ? '▶ LÄUFT' : '■ AUS';
+  document.getElementById('st-engine').className = 'status-value ' + (engOn ? 'on pulse' : 'off');
+  document.getElementById('btn-eng-on').className = 'big-btn btn-engine-on' + (engOn ? ' btn-disabled' : '');
+  document.getElementById('btn-eng-off').className = 'big-btn btn-engine-off' + (!engOn ? ' btn-disabled' : '');
+
+  // trip
+  const tripOn = state.tripActive;
+  document.getElementById('st-trip').textContent = tripOn ? '⛵ UNTERWEGS' : 'IM HAFEN';
+  document.getElementById('st-trip').className = 'status-value ' + (tripOn ? 'active' : 'off');
+  document.getElementById('btn-trip-start').className = 'big-btn btn-trip-start' + (tripOn ? ' btn-disabled' : '');
+  document.getElementById('btn-trip-end').className = 'big-btn btn-trip-end' + (!tripOn ? ' btn-disabled' : '');
+  updateFloatBtn();
+
+  // fuel
+  document.getElementById('fuel-slider').value = state.fuel;
+  updateFuel(state.fuel);
+
+  // timers
+  clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    if (state.engineOn && state.engineStart) {
+      document.getElementById('st-engtime').textContent = formatDuration(Date.now() - state.engineStart);
+    } else {
+      document.getElementById('st-engtime').textContent = formatDuration(state.engineHours * 3600000);
+    }
+    if (state.tripActive && state.tripStart) {
+      document.getElementById('st-triptime').textContent = formatDuration(Date.now() - state.tripStart);
+    } else {
+      document.getElementById('st-triptime').textContent = '—';
+    }
+  }, 1000);
+}
+
+// ---- RENDER TRIPS ----
+function renderTrips() {
+  const el = document.getElementById('trips-list');
+  if (!state.trips.length) {
+    el.innerHTML = `<div class="empty-state"><span class="icon">📋</span>Noch keine Fahrten gespeichert.<br>Starte deine erste Fahrt!</div>`;
+    return;
+  }
+  el.innerHTML = state.trips.map((t,i) => {
+    const notes = t.logNotes || [];
+    const stats = calcTrackStats(t.track || []);
+    return `
+    <div class="trip-card">
+      <div class="trip-card-header" onclick="viewTripMap(${i})" style="cursor:pointer">
+        <div class="trip-date">📅 ${formatDate(t.start)}</div>
+        <div class="trip-duration">⏱ ${formatDuration(t.duration)}</div>
+      </div>
+      <div class="trip-name" onclick="viewTripMap(${i})" style="cursor:pointer">${t.name}</div>
+      <div class="trip-meta">
+        <span>👥 ${t.crew.length ? t.crew.join(', ') : 'Solo'}</span>
+        <span>⛽ ${t.fuelStart}% → ${t.fuelEnd}%</span>
+        ${stats.distNm > 0 ? `<span>🧭 ${stats.distNm.toFixed(1)} nm</span>` : ''}
+        ${notes.length ? `<span>📝 ${notes.length} Notiz${notes.length>1?'en':''}</span>` : ''}
+      </div>
+      ${t.notes ? `<div style="font-size:12px;color:var(--muted);margin-top:8px;font-style:italic">${t.notes}</div>` : ''}
+      ${t.weather ? `<div style="font-size:12px;color:var(--muted);margin-top:6px">${t.weather.icon} ${t.weather.desc} · ${t.weather.tempC}°C · 💨 ${t.weather.windKts} kts ${t.weather.wdir}</div>` : ''}
+      ${notes.length ? `<div style="margin-top:10px;border-top:1px solid var(--card-border);padding-top:10px">
+        ${notes.slice(0,2).map(n => `<div style="font-size:12px;margin-bottom:6px"><span style="font-family:'Space Mono',monospace;font-size:10px;color:var(--teal)">${formatTime(n.t)}</span> ${n.text}</div>`).join('')}
+        ${notes.length > 2 ? `<div style="font-size:11px;color:var(--muted)">+ ${notes.length-2} weitere Notizen</div>` : ''}
+      </div>` : ''}
+      <div class="trip-actions">
+        <button class="trip-action-btn" onclick="openNotesModal(${i})">📝 NOTIZEN</button>
+        <button class="trip-action-btn" onclick="viewTripMap(${i})">🗺️ KARTE</button>
+        <button class="trip-action-btn" onclick="exportTripPDF(${i})">📄 PDF</button>
+      </div>
+    </div>
+  `}).join('');
+}
+
+// ---- MAP HELPERS ----
+function haversineKm(lat1, lng1, lat2, lng2) {
+  const R = 6371, dLat = (lat2-lat1)*Math.PI/180, dLng = (lng2-lng1)*Math.PI/180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function speedToColor(kts) {
+  // green(slow) → teal → amber → red(fast)
+  if (kts < 2)  return '#2dc653';
+  if (kts < 5)  return '#00b4d8';
+  if (kts < 10) return '#f4a261';
+  return '#e63946';
+}
+
+function calcTrackStats(track) {
+  if (track.length < 2) return { distKm: 0, distNm: 0, avgKts: 0, maxKts: 0 };
+  let distKm = 0, maxKts = 0;
+  const speeds = [];
+  for (let i = 1; i < track.length; i++) {
+    const d = haversineKm(track[i-1].lat, track[i-1].lng, track[i].lat, track[i].lng);
+    distKm += d;
+    const dt = (track[i].t - track[i-1].t) / 3600000; // hours
+    if (dt > 0) {
+      const kts = (d / 1.852) / dt;
+      speeds.push(kts);
+      if (kts > maxKts) maxKts = kts;
+    }
+  }
+  const avgKts = speeds.length ? speeds.reduce((a,b)=>a+b,0)/speeds.length : 0;
+  return { distKm, distNm: distKm/1.852, avgKts, maxKts };
+}
+
+// ---- MAP ----
+let currentLayerMode = 'nautical';
+
+function viewTripMap(idx) {
+  showPage('map');
+  const trip = state.trips[idx];
+  renderMap(trip);
+}
+
+function renderMap(trip) {
+  const container = document.getElementById('map-container');
+
+  // Voyage selector buttons
+  const selArea = document.getElementById('trip-select-area');
+  if (state.trips.length) {
+    selArea.innerHTML = `<div style="margin-bottom:12px">
+      <div class="section-title">FAHRT AUSWÄHLEN</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        ${state.trips.map((t,i) => `
+          <button onclick="viewTripMap(${i})" style="background:var(--card);border:1px solid var(--card-border);color:var(--text);border-radius:8px;padding:6px 12px;font-size:11px;font-family:'Space Mono',monospace;cursor:pointer">
+            ${formatDate(t.start)}<br><span style="color:var(--teal)">${t.name}</span>
+          </button>`).join('')}
+      </div>
+    </div>`;
+  }
+
+  if (!trip || !trip.track.length) {
+    container.innerHTML = `<div class="map-placeholder">
+      <span class="icon">📍</span>
+      <span>Kein GPS-Track für diese Fahrt</span>
+      <span style="font-size:11px">Standortzugriff während der Fahrt aktivieren</span>
+    </div>`;
+    return;
+  }
+
+  const stats = calcTrackStats(trip.track);
+
+  container.innerHTML = `
+    <div class="map-layer-btns">
+      <button class="layer-btn ${currentLayerMode==='nautical'?'active':''}" onclick="setMapLayer('nautical', currentTrip)">🧭 Nautisch</button>
+      <button class="layer-btn ${currentLayerMode==='satellite'?'active':''}" onclick="setMapLayer('satellite', currentTrip)">🛰️ Satellit</button>
+      <button class="layer-btn ${currentLayerMode==='osm'?'active':''}" onclick="setMapLayer('osm', currentTrip)">🗺️ Straße</button>
+    </div>
+    <div id="map"></div>
+    <div class="track-stats">
+      <div class="track-stat">
+        <div class="track-stat-label">Distanz</div>
+        <div class="track-stat-val">${stats.distNm.toFixed(1)} nm</div>
+      </div>
+      <div class="track-stat">
+        <div class="track-stat-label">Ø Geschwindigkeit</div>
+        <div class="track-stat-val">${stats.avgKts.toFixed(1)} kts</div>
+      </div>
+      <div class="track-stat">
+        <div class="track-stat-label">Max. Geschwindigkeit</div>
+        <div class="track-stat-val">${stats.maxKts.toFixed(1)} kts</div>
+      </div>
+    </div>
+    <div class="speed-legend">
+      <span class="speed-legend-label">Geschwindigkeit</span>
+      <div style="flex:1">
+        <div class="speed-gradient"></div>
+        <div class="speed-legend-ends"><span>Langsam</span><span>Schnell</span></div>
+      </div>
+    </div>
+  `;
+
+  window.currentTrip = trip;
+
+  setTimeout(() => buildMap(trip), 100);
+}
+
+function buildMap(trip) {
+  if (currentMap) { currentMap.remove(); currentMap = null; }
+  const map = L.map('map', { zoomControl: true });
+  currentMap = map;
+
+  setMapLayer(currentLayerMode, trip, map);
+
+  const track = trip.track;
+  if (track.length < 2) {
+    // Single point
+    L.circleMarker([track[0].lat, track[0].lng], { radius: 8, color: '#00b4d8', fillColor: '#00b4d8', fillOpacity: 1 }).addTo(map);
+    map.setView([track[0].lat, track[0].lng], 14);
+    return;
+  }
+
+  // Draw speed-colored segments
+  let bounds = [];
+  for (let i = 1; i < track.length; i++) {
+    const p1 = track[i-1], p2 = track[i];
+    const dt = (p2.t - p1.t) / 3600000;
+    const d = haversineKm(p1.lat, p1.lng, p2.lat, p2.lng);
+    const kts = dt > 0 ? (d / 1.852) / dt : 0;
+    const color = speedToColor(kts);
+    const seg = L.polyline([[p1.lat,p1.lng],[p2.lat,p2.lng]], {
+      color, weight: 5, opacity: 0.85
+    }).addTo(map);
+
+    const ts = new Date(p2.t).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+    seg.bindPopup(`<b>⏱ ${ts}</b><br>🚤 ${kts.toFixed(1)} kts<br>📍 ${p2.lat.toFixed(4)}, ${p2.lng.toFixed(4)}`);
+    bounds.push([p1.lat,p1.lng]);
+  }
+  bounds.push([track[track.length-1].lat, track[track.length-1].lng]);
+
+  // Waypoint dots every ~10 points
+  for (let i = 0; i < track.length; i += Math.max(1, Math.floor(track.length/15))) {
+    if (i === 0 || i === track.length-1) continue;
+    const p = track[i];
+    const dt = i > 0 ? (p.t - track[i-1].t)/3600000 : 0;
+    const d = i > 0 ? haversineKm(track[i-1].lat,track[i-1].lng,p.lat,p.lng) : 0;
+    const kts = dt > 0 ? (d/1.852)/dt : 0;
+    const ts = new Date(p.t).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+    L.circleMarker([p.lat,p.lng], {
+      radius: 5, color: '#fff', weight: 1.5,
+      fillColor: speedToColor(kts), fillOpacity: 1
+    }).addTo(map).bindPopup(`<b>⏱ ${ts}</b><br>🚤 ${kts.toFixed(1)} kts`);
+  }
+
+  // Departure marker
+  const startIcon = L.divIcon({
+    html: `<div style="background:#2dc653;width:18px;height:18px;border-radius:50%;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;font-size:9px">⛵</div>`,
+    iconSize:[18,18], iconAnchor:[9,9], className:''
+  });
+  const endIcon = L.divIcon({
+    html: `<div style="background:#e63946;width:18px;height:18px;border-radius:50%;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;font-size:9px">🏁</div>`,
+    iconSize:[18,18], iconAnchor:[9,9], className:''
+  });
+
+  const dep = track[0], arr = track[track.length-1];
+  L.marker([dep.lat,dep.lng], {icon:startIcon}).addTo(map)
+    .bindPopup(`<b>⛵ Abfahrt</b><br>${new Date(dep.t).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}<br>${dep.lat.toFixed(4)}, ${dep.lng.toFixed(4)}`);
+  L.marker([arr.lat,arr.lng], {icon:endIcon}).addTo(map)
+    .bindPopup(`<b>🏁 Ankunft</b><br>${new Date(arr.t).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}<br>${arr.lat.toFixed(4)}, ${arr.lng.toFixed(4)}`);
+
+  map.fitBounds(bounds, { padding: [40,40] });
+}
+
+function setMapLayer(mode, trip, map) {
+  currentLayerMode = mode;
+  // Update button states
+  document.querySelectorAll('.layer-btn').forEach(b => b.classList.remove('active'));
+  const btnMap = {'nautical':0,'satellite':1,'osm':2};
+  const btns = document.querySelectorAll('.layer-btn');
+  if (btns[btnMap[mode]]) btns[btnMap[mode]].classList.add('active');
+
+  if (!map) map = currentMap;
+  if (!map) { buildMap(trip || window.currentTrip); return; }
+
+  // Remove existing tile layers
+  map.eachLayer(l => { if (l instanceof L.TileLayer) map.removeLayer(l); });
+
+  if (mode === 'nautical') {
+    // OpenStreetMap base + OpenSeaMap nautical overlay
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap', opacity: 0.85
+    }).addTo(map);
+    L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', {
+      attribution: '© OpenSeaMap', opacity: 0.9
+    }).addTo(map);
+  } else if (mode === 'satellite') {
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+      attribution: '© Esri'
+    }).addTo(map);
+  } else {
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap'
+    }).addTo(map);
+  }
+}
+
+// ---- PAGE NAV ----
+function showPage(id) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+  document.getElementById('page-'+id).classList.add('active');
+  document.getElementById('nav-'+id).classList.add('active');
+
+  if (id === 'log') {
+    const logEl = document.getElementById('trips-list');
+    renderTrips();
+    // also show raw events
+    if (logEntries.length) {
+      const evEl = document.createElement('div');
+      evEl.innerHTML = `<div class="section-title" style="margin-top:20px">EREIGNISPROTOKOLL</div>` +
+        logEntries.slice(0,30).map(e => `
+          <div class="log-entry">
+            <div class="log-time">${formatDate(e.t)} — ${formatTime(e.t)}</div>
+            <div class="log-event">${e.event}</div>
+            ${e.detail ? `<div class="log-detail">${e.detail}</div>` : ''}
+          </div>`).join('');
+      document.getElementById('page-log').appendChild(evEl);
+    }
+  }
+
+  if (id === 'map') {
+    const selArea = document.getElementById('trip-select-area');
+    if (!state.trips.length) {
+      selArea.innerHTML = '';
+      document.getElementById('map-container').innerHTML = `<div class="map-placeholder">
+        <span class="icon">🗺️</span>
+        <span>Fahrt abschließen um Route anzuzeigen</span>
+      </div>`;
+    } else if (state.trips.length > 0) {
+      renderMap(state.trips[0]);
+    }
+  }
+
+  if (id === 'trip') {
+    document.getElementById('fuel-at-dep').textContent = state.fuel+'%';
+    document.getElementById('fuel-bar-dep').style.width = state.fuel+'%';
+  }
+}
+
+// ---- GPS LOCATE ----
+document.getElementById('gps-coords').onclick = function() {
+  if (!navigator.geolocation) { toast('GPS nicht verfügbar'); return; }
+  navigator.geolocation.getCurrentPosition(pos => {
+    this.textContent = `📍 ${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}`;
+    toast('📍 Standort aktualisiert');
+  }, () => toast('Standort konnte nicht ermittelt werden'));
+};
+
+// ---- WEATHER ----
+const WMO_CODES = {
+  0: ['☀️','Klarer Himmel'], 1: ['🌤️','Überwiegend klar'], 2: ['⛅','Teilweise bewölkt'], 3: ['☁️','Bedeckt'],
+  45: ['🌫️','Neblig'], 48: ['🌫️','Gefrierender Nebel'],
+  51: ['🌦️','Leichter Nieselregen'], 53: ['🌦️','Nieselregen'], 55: ['🌧️','Starker Nieselregen'],
+  61: ['🌧️','Leichter Regen'], 63: ['🌧️','Regen'], 65: ['🌧️','Starker Regen'],
+  71: ['🌨️','Leichter Schnee'], 73: ['❄️','Schnee'], 75: ['❄️','Starker Schnee'],
+  77: ['🌨️','Schneegriesel'],
+  80: ['🌦️','Leichte Schauer'], 81: ['🌧️','Schauer'], 82: ['⛈️','Heftige Schauer'],
+  85: ['🌨️','Schneeschauer'], 86: ['❄️','Starke Schneeschauer'],
+  95: ['⛈️','Gewitter'], 96: ['⛈️','Gewitter mit Hagel'], 99: ['⛈️','Gewitter mit starkem Hagel']
+};
+
+function beaufortDesc(ms) {
+  const kts = ms * 1.944;
+  if (kts < 1) return 'Windstille';
+  if (kts < 4) return 'Leiser Zug';
+  if (kts < 7) return 'Leichte Brise';
+  if (kts < 11) return 'Schwache Brise';
+  if (kts < 16) return 'Mäßige Brise';
+  if (kts < 22) return 'Frische Brise';
+  if (kts < 28) return 'Starker Wind';
+  if (kts < 34) return 'Steifer Wind';
+  if (kts < 41) return 'Stürmischer Wind';
+  if (kts < 48) return 'Sturm';
+  if (kts < 56) return 'Schwerer Sturm';
+  return '⚠️ Orkan';
+}
+
+function windDirArrow(deg) {
+  const dirs = ['N','NE','E','SE','S','SW','W','NW'];
+  return dirs[Math.round(deg/45) % 8];
+}
+
+function marineAlert(weather) {
+  const alerts = [];
+  const wspd = weather.windspeed_10m;
+  const wgust = weather.windgusts_10m || 0;
+  if (wspd > 14) alerts.push(`⚠️ Wind ${(wspd*1.944).toFixed(0)} kts — Vorsicht geboten`);
+  if (wgust > 18) alerts.push(`⚠️ Böen bis ${(wgust*1.944).toFixed(0)} kts`);
+  const wmo = weather.weathercode;
+  if ([95,96,99].includes(wmo)) alerts.push('⛈️ Gewitter — Nicht ablegen!');
+  if ([65,82].includes(wmo)) alerts.push('🌧️ Starker Regen — Schlechte Sicht');
+  return alerts;
+}
+
+async function fetchWeather() {
+  const card = document.getElementById('weather-card');
+  if (!navigator.geolocation) {
+    card.innerHTML = `<div class="weather-error">📍 Standort auf diesem Gerät nicht verfügbar</div>`;
+    return;
+  }
+  card.innerHTML = `<div class="weather-loading">📡 Standort wird ermittelt...<br><span style="font-size:10px;display:block;margin-top:4px">Bitte Standortzugriff erlauben</span></div>`;
+
+  navigator.geolocation.getCurrentPosition(async pos => {
+    const { latitude: lat, longitude: lng } = pos.coords;
+    document.getElementById('gps-coords').textContent = `📍 ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+
+    card.innerHTML = `<div class="weather-loading">🌐 Wetterdaten werden geladen...</div>`;
+
+    try {
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current_weather=true&hourly=relative_humidity_2m,apparent_temperature,precipitation_probability,windgusts_10m,visibility&forecast_days=1&timezone=auto`;
+      const res = await fetch(url);
+      const data = await res.json();
+      const w = data.current_weather;
+      const hr = data.hourly;
+      // Find closest hourly index
+      const now = new Date();
+      const hrIdx = now.getHours();
+
+      const [icon, desc] = WMO_CODES[w.weathercode] || ['🌡️','Unbekannt'];
+      const tempC = Math.round(w.temperature);
+      const windMs = w.windspeed / 3.6;
+      const windKts = (windMs * 1.944).toFixed(0);
+      const gust = hr.windgusts_10m ? (hr.windgusts_10m[hrIdx] / 3.6 * 1.944).toFixed(0) : '—';
+      const humid = hr.relative_humidity_2m ? hr.relative_humidity_2m[hrIdx] : '—';
+      const precip = hr.precipitation_probability ? hr.precipitation_probability[hrIdx] : '—';
+      const vis = hr.visibility ? (hr.visibility[hrIdx] / 1000).toFixed(1) : '—';
+      const bft = beaufortDesc(windMs);
+      const wdir = windDirArrow(w.winddirection);
+
+      const alerts = marineAlert({ windspeed_10m: windMs, windgusts_10m: hr.windgusts_10m ? hr.windgusts_10m[hrIdx]/3.6 : 0, weathercode: w.weathercode });
+
+      // Save weather to current state for logging
+      state.lastWeather = { icon, desc, tempC, windKts, gust, humid, precip, vis, bft, wdir, ts: Date.now() };
+      save();
+
+      card.innerHTML = `
+        <div class="weather-top">
+          <div>
+            <div class="weather-icon">${icon}</div>
+          </div>
+          <div style="text-align:right">
+            <div class="weather-temp">${tempC}°</div>
+            <div style="font-size:10px;color:var(--muted);font-family:'Space Mono',monospace">${new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</div>
+          </div>
+        </div>
+        <div class="weather-desc">${desc}</div>
+        <div class="weather-loc">🧭 Wind aus ${wdir} · ${bft}</div>
+        <div class="weather-grid">
+          <div class="weather-stat">
+            <div class="weather-stat-label">Wind</div>
+            <div class="weather-stat-val">${windKts} kts</div>
+          </div>
+          <div class="weather-stat">
+            <div class="weather-stat-label">Böen</div>
+            <div class="weather-stat-val">${gust} kts</div>
+          </div>
+          <div class="weather-stat">
+            <div class="weather-stat-label">Regen %</div>
+            <div class="weather-stat-val">${precip}%</div>
+          </div>
+          <div class="weather-stat">
+            <div class="weather-stat-label">Luftfeuchte</div>
+            <div class="weather-stat-val">${humid}%</div>
+          </div>
+          <div class="weather-stat">
+            <div class="weather-stat-label">Sichtweite</div>
+            <div class="weather-stat-val">${vis} km</div>
+          </div>
+          <div class="weather-stat">
+            <div class="weather-stat-label">Gefühlt</div>
+            <div class="weather-stat-val">${hr.apparent_temperature ? Math.round(hr.apparent_temperature[hrIdx]) : tempC}°C</div>
+          </div>
+        </div>
+        ${alerts.map(a => `<div class="weather-alert">${a}</div>`).join('')}
+        <button class="weather-refresh" onclick="fetchWeather()">↻ Aktualisieren</button>
+      `;
+    } catch(e) {
+      card.innerHTML = `<div class="weather-error">⚠️ Wetter konnte nicht geladen werden<br><span style="font-size:10px">Internetverbindung prüfen</span></div><button class="weather-refresh" onclick="fetchWeather()">↻ Erneut versuchen</button>`;
+    }
+  }, () => {
+    card.innerHTML = `<div class="weather-error">📍 Standortzugriff verweigert<br><span style="font-size:10px">Standort in den Browsereinstellungen erlauben</span></div><button class="weather-refresh" onclick="fetchWeather()">↻ Erneut versuchen</button>`;
+  }, { enableHighAccuracy: false, timeout: 10000 });
+}
+
+// ---- PEGELSTAND ----
+async function fetchPegel() {
+  const card = document.getElementById('pegel-card');
+  if (!navigator.geolocation) {
+    card.innerHTML = `<div class="pegel-loading" style="color:var(--amber)">📍 Standort nicht verfügbar</div>`;
+    return;
+  }
+
+  navigator.geolocation.getCurrentPosition(async pos => {
+    const { latitude: lat, longitude: lng } = pos.coords;
+    card.innerHTML = `<div class="pegel-loading">🔍 Suche nächsten Pegel...</div>`;
+
+    try {
+      // Step 1: Get all stations from PEGELONLINE
+      const stationsUrl = `https://www.pegelonline.wsv.de/webservices/rest-api/v2/stations.json?includeTimeseries=false`;
+      const res = await fetch(stationsUrl);
+      const stations = await res.json();
+
+      // Step 2: Find nearest station by haversine distance
+      let nearest = null, minDist = Infinity;
+      for (const st of stations) {
+        if (!st.latitude || !st.longitude) continue;
+        const d = haversineKm(lat, lng, st.latitude, st.longitude);
+        if (d < minDist) { minDist = d; nearest = st; }
+      }
+
+      if (!nearest) throw new Error('No station found');
+
+      // Step 3: Get current measurement for nearest station
+      const measUrl = `https://www.pegelonline.wsv.de/webservices/rest-api/v2/stations/${nearest.uuid}/W/currentmeasurement.json`;
+      const measRes = await fetch(measUrl);
+      const meas = await measRes.json();
+
+      // Step 4: Get timeseries for trend (last 25 readings)
+      const tsUrl = `https://www.pegelonline.wsv.de/webservices/rest-api/v2/stations/${nearest.uuid}/W/measurements.json?start=PT6H`;
+      const tsRes = await fetch(tsUrl);
+      const tsData = await tsRes.json();
+
+      const currentCm = meas.value;
+      const distKm = minDist.toFixed(1);
+
+      // Trend from last readings
+      let trend = '→', trendColor = 'var(--muted)', trendLabel = 'Gleichbleibend';
+      if (tsData && tsData.length >= 3) {
+        const recent = tsData.slice(-6);
+        const first = recent[0].value;
+        const last = recent[recent.length-1].value;
+        const diff = last - first;
+        if (diff > 3) { trend = '📈'; trendColor = 'var(--teal)'; trendLabel = `+${diff.toFixed(0)} cm (steigend)`; }
+        else if (diff < -3) { trend = '📉'; trendColor = 'var(--amber)'; trendLabel = `${diff.toFixed(0)} cm (fallend)`; }
+        else { trend = '➡️'; trendColor = 'var(--muted)'; trendLabel = 'Gleichbleibend'; }
+      }
+
+      // Tide detection from timeseries — find if we're between a min (Ebbe) or max (Flut)
+      let tideHTML = '';
+      if (tsData && tsData.length >= 6) {
+        const vals = tsData.map(d => d.value);
+        const times = tsData.map(d => new Date(d.timestamp));
+
+        // Find recent local maxima and minima
+        let lastMax = null, lastMin = null;
+        for (let i = 1; i < vals.length - 1; i++) {
+          if (vals[i] > vals[i-1] && vals[i] > vals[i+1]) lastMax = { v: vals[i], t: times[i] };
+          if (vals[i] < vals[i-1] && vals[i] < vals[i+1]) lastMin = { v: vals[i], t: times[i] };
+        }
+
+        const fmt = t => t ? t.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : '—';
+        const isTidal = nearest.water && (nearest.water.longname || '').toLowerCase().includes('elbe') ||
+                        (nearest.longname || '').toLowerCase().includes('elbe') ||
+                        (nearest.longname || '').toLowerCase().includes('weser') ||
+                        (nearest.longname || '').toLowerCase().includes('ems');
+
+        if (lastMax || lastMin) {
+          const currentTide = (lastMax && lastMin)
+            ? (lastMax.t > lastMin.t ? '🌊 Flut' : '🌀 Ebbe')
+            : trend === '📈' ? '🌊 Flut' : '🌀 Ebbe';
+
+          tideHTML = `
+            <div style="margin-top:10px;font-size:11px;font-family:'Space Mono',monospace;color:var(--muted)">GEZEITENTREND</div>
+            <div class="pegel-tide">
+              ${lastMax ? `<div class="tide-item">
+                <div class="tide-type">🌊</div>
+                <div class="tide-label">Letztes Hochwasser</div>
+                <div class="tide-time">${fmt(lastMax.t)}</div>
+                <div class="tide-val">${lastMax.v} cm</div>
+              </div>` : ''}
+              ${lastMin ? `<div class="tide-item">
+                <div class="tide-type">🌀</div>
+                <div class="tide-label">Letztes Niedrigwasser</div>
+                <div class="tide-time">${fmt(lastMin.t)}</div>
+                <div class="tide-val">${lastMin.v} cm</div>
+              </div>` : ''}
+            </div>
+            <div style="margin-top:8px;font-size:12px;font-weight:600">${currentTide} — <span style="color:${trendColor}">${trendLabel}</span></div>
+          `;
+        }
+      }
+
+      // Warning thresholds (rough estimates)
+      let warnHTML = '';
+      if (nearest.km !== undefined) {
+        if (currentCm < 50) warnHTML = `<div class="pegel-warn">⚠️ Niedriger Wasserstand — Grundberührung möglich</div>`;
+        if (currentCm > 600) warnHTML = `<div class="pegel-warn">⚠️ Hochwasser — Vorsicht beim Anlegen</div>`;
+      }
+
+      // Water name
+      const waterName = nearest.water ? (nearest.water.longname || nearest.water.shortname || '') : '';
+      const levelClass = currentCm < 80 ? 'pegel-low' : currentCm > 500 ? 'pegel-high' : '';
+
+      // Save to state
+      state.lastPegel = { name: nearest.longname, water: waterName, value: currentCm, trend: trendLabel, dist: distKm, ts: Date.now() };
+      save();
+
+      card.innerHTML = `
+        <div class="pegel-header">
+          <div>
+            <div class="pegel-name">${nearest.longname}</div>
+            <div class="pegel-river">${waterName} · ${distKm} km entfernt</div>
+          </div>
+          <div>
+            <div class="pegel-value ${levelClass}">${currentCm}</div>
+            <div class="pegel-unit">cm über PN</div>
+          </div>
+        </div>
+        <div class="pegel-grid">
+          <div class="pegel-stat">
+            <div class="pegel-stat-label">Tendenz</div>
+            <div class="pegel-stat-val" style="font-size:18px">${trend}</div>
+          </div>
+          <div class="pegel-stat">
+            <div class="pegel-stat-label">Änderung</div>
+            <div class="pegel-stat-val" style="color:${trendColor};font-size:11px">${trendLabel}</div>
+          </div>
+          <div class="pegel-stat">
+            <div class="pegel-stat-label">Entfernung</div>
+            <div class="pegel-stat-val">${distKm} km</div>
+          </div>
+        </div>
+        ${tideHTML}
+        ${warnHTML}
+        <button class="weather-refresh" style="margin-top:12px" onclick="fetchPegel()">↻ Aktualisieren</button>
+      `;
+
+    } catch(e) {
+      card.innerHTML = `<div class="pegel-loading" style="color:var(--amber)">⚠️ Pegelstand nicht verfügbar<br><span style="font-size:10px">Internetverbindung prüfen</span></div>
+        <button class="weather-refresh" style="margin-top:8px" onclick="fetchPegel()">↻ Erneut versuchen</button>`;
+    }
+  }, () => {
+    card.innerHTML = `<div class="pegel-loading" style="color:var(--amber)">📍 Standort nicht freigegeben<br><span style="font-size:10px">Bitte Standort in den Browsereinstellungen erlauben</span></div>`;
+  }, { enableHighAccuracy: false, timeout: 10000 });
+}
+
+// ---- NOTES MODAL ----
+let notesTargetIdx = null; // null = current active trip
+
+function openNotesModal(tripIdx) {
+  notesTargetIdx = tripIdx;
+  const modal = document.getElementById('notes-modal');
+  modal.classList.add('open');
+  renderNotesList();
+  document.getElementById('note-input').focus();
+}
+
+function closeNotesModal() {
+  document.getElementById('notes-modal').classList.remove('open');
+  document.getElementById('note-input').value = '';
+  renderTrips();
+}
+
+function renderNotesList() {
+  const list = document.getElementById('notes-list');
+  let notes = [];
+  if (notesTargetIdx !== null) {
+    notes = state.trips[notesTargetIdx].logNotes || [];
+  } else if (state.tripActive) {
+    notes = state.currentNotes || [];
+  }
+  if (!notes.length) {
+    list.innerHTML = `<div style="text-align:center;color:var(--muted);font-size:13px;padding:16px 0">Noch keine Notizen für diese Fahrt.</div>`;
+    return;
+  }
+  list.innerHTML = notes.map((n,i) => `
+    <div class="note-entry">
+      <div class="note-time">⏱ ${formatTime(n.t)} — ${formatDate(n.t)}</div>
+      <div class="note-text">${n.text}</div>
+      ${n.lat ? `<div class="note-pos">📍 ${n.lat.toFixed(4)}, ${n.lng.toFixed(4)}</div>` : ''}
+      <button class="note-delete" onclick="deleteNote(${i})">✕</button>
+    </div>
+  `).join('');
+}
+
+function addNote() {
+  const text = document.getElementById('note-input').value.trim();
+  if (!text) return;
+
+  // Get current GPS if available
+  const note = { t: Date.now(), text };
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(pos => {
+      note.lat = pos.coords.latitude;
+      note.lng = pos.coords.longitude;
+      saveNote(note);
+    }, () => saveNote(note), { timeout: 3000 });
+  } else {
+    saveNote(note);
+  }
+}
+
+function saveNote(note) {
+  if (notesTargetIdx !== null) {
+    if (!state.trips[notesTargetIdx].logNotes) state.trips[notesTargetIdx].logNotes = [];
+    state.trips[notesTargetIdx].logNotes.push(note);
+  } else {
+    if (!state.currentNotes) state.currentNotes = [];
+    state.currentNotes.push(note);
+  }
+  save();
+  document.getElementById('note-input').value = '';
+  renderNotesList();
+  toast('📝 Notiz gespeichert');
+}
+
+function deleteNote(idx) {
+  if (notesTargetIdx !== null) {
+    state.trips[notesTargetIdx].logNotes.splice(idx, 1);
+  } else {
+    state.currentNotes.splice(idx, 1);
+  }
+  save();
+  renderNotesList();
+}
+
+function updateFloatBtn() {
+  const btn = document.getElementById('float-note-btn');
+  btn.classList.toggle('visible', state.tripActive);
+}
+
+// ---- PDF EXPORT ----
+function exportTripPDF(idx) {
+  const t = state.trips[idx];
+  const stats = calcTrackStats(t.track || []);
+  const notes = t.logNotes || [];
+
+  const html = `<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<title>Logbuch – ${t.name}</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Inter', sans-serif; color: #1a2a3a; background: #fff; padding: 32px; max-width: 800px; margin: 0 auto; }
+  .header { border-bottom: 3px solid #0a1628; padding-bottom: 20px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: flex-start; }
+  .logo { font-size: 28px; font-weight: 700; color: #0a1628; letter-spacing: 2px; }
+  .logo span { color: #00b4d8; }
+  .trip-title { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+  .trip-date { font-size: 13px; color: #7a9bb5; }
+  .section { margin-bottom: 24px; }
+  .section-title { font-size: 11px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: #7a9bb5; border-bottom: 1px solid #e0e8f0; padding-bottom: 6px; margin-bottom: 12px; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .stat-box { background: #f0f6fa; border-radius: 10px; padding: 12px; }
+  .stat-label { font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: #7a9bb5; margin-bottom: 4px; }
+  .stat-val { font-size: 18px; font-weight: 700; color: #0a1628; }
+  .note-item { border-left: 3px solid #00b4d8; padding: 10px 14px; margin-bottom: 10px; background: #f8fbfd; border-radius: 0 8px 8px 0; }
+  .note-meta { font-size: 11px; color: #00b4d8; margin-bottom: 4px; font-weight: 600; }
+  .note-body { font-size: 14px; color: #1a2a3a; line-height: 1.5; }
+  .note-gps { font-size: 10px; color: #7a9bb5; margin-top: 4px; }
+  .crew-tag { display: inline-block; background: #e0f4fb; color: #0077a8; border-radius: 20px; padding: 3px 10px; font-size: 12px; margin: 3px; }
+  .weather-box { background: #f0f6fa; border-radius: 10px; padding: 14px; display: flex; align-items: center; gap: 16px; }
+  .weather-icon-big { font-size: 36px; }
+  .weather-details { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; font-size: 12px; }
+  .weather-row { display: flex; gap: 6px; }
+  .weather-key { color: #7a9bb5; min-width: 70px; }
+  .footer { margin-top: 32px; padding-top: 12px; border-top: 1px solid #e0e8f0; font-size: 11px; color: #7a9bb5; display: flex; justify-content: space-between; }
+  .track-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .track-table th { background: #0a1628; color: #fff; padding: 8px; text-align: left; font-size: 10px; letter-spacing: 1px; }
+  .track-table td { padding: 6px 8px; border-bottom: 1px solid #e0e8f0; }
+  .track-table tr:nth-child(even) td { background: #f8fbfd; }
+  @media print { body { padding: 16px; } }
+</style>
+</head><body>
+
+<div class="header">
+  <div>
+    <div class="logo">⚓ BOOT<span>LOGBUCH</span></div>
+    <div style="font-size:11px;color:#7a9bb5;margin-top:4px">Offizielles Fahrtenbuch</div>
+  </div>
+  <div style="text-align:right">
+    <div class="trip-title">${t.name}</div>
+    <div class="trip-date">📅 ${formatDate(t.start)} · ${formatTime(t.start)} – ${formatTime(t.end)}</div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">Fahrtdaten</div>
+  <div class="grid">
+    <div class="stat-box"><div class="stat-label">Dauer</div><div class="stat-val">${formatDuration(t.duration)}</div></div>
+    <div class="stat-box"><div class="stat-label">Distanz</div><div class="stat-val">${stats.distNm.toFixed(2)} nm</div></div>
+    <div class="stat-box"><div class="stat-label">Ø Geschwindigkeit</div><div class="stat-val">${stats.avgKts.toFixed(1)} kts</div></div>
+    <div class="stat-box"><div class="stat-label">Max. Geschwindigkeit</div><div class="stat-val">${stats.maxKts.toFixed(1)} kts</div></div>
+    <div class="stat-box"><div class="stat-label">Kraftstoff Start</div><div class="stat-val">${t.fuelStart}%</div></div>
+    <div class="stat-box"><div class="stat-label">Kraftstoff Ende</div><div class="stat-val">${t.fuelEnd}%</div></div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">Besatzung</div>
+  ${t.crew.length ? t.crew.map(c => `<span class="crew-tag">👤 ${c}</span>`).join('') : '<span style="color:#7a9bb5;font-size:13px">Solo</span>'}
+</div>
+
+${t.weather ? `
+<div class="section">
+  <div class="section-title">Wetter bei Abfahrt</div>
+  <div class="weather-box">
+    <div class="weather-icon-big">${t.weather.icon}</div>
+    <div>
+      <div style="font-size:16px;font-weight:700;margin-bottom:6px">${t.weather.desc} · ${t.weather.tempC}°C</div>
+      <div class="weather-details">
+        <div class="weather-row"><span class="weather-key">Wind:</span><span>${t.weather.windKts} kts ${t.weather.wdir}</span></div>
+        <div class="weather-row"><span class="weather-key">Böen:</span><span>${t.weather.gust} kts</span></div>
+        <div class="weather-row"><span class="weather-key">Sicht:</span><span>${t.weather.vis} km</span></div>
+        <div class="weather-row"><span class="weather-key">Regen:</span><span>${t.weather.precip}%</span></div>
+      </div>
+    </div>
+  </div>
+</div>` : ''}
+
+${t.notes ? `
+<div class="section">
+  <div class="section-title">Abfahrtsnotizen</div>
+  <div style="font-size:14px;color:#1a2a3a;line-height:1.6;background:#f8fbfd;padding:12px;border-radius:8px">${t.notes}</div>
+</div>` : ''}
+
+${notes.length ? `
+<div class="section">
+  <div class="section-title">Reisenotizen (${notes.length})</div>
+  ${notes.map(n => `
+    <div class="note-item">
+      <div class="note-meta">⏱ ${formatTime(n.t)} — ${formatDate(n.t)}</div>
+      <div class="note-body">${n.text}</div>
+      ${n.lat ? `<div class="note-gps">📍 ${n.lat.toFixed(5)}, ${n.lng.toFixed(5)}</div>` : ''}
+    </div>
+  `).join('')}
+</div>` : ''}
+
+${t.track && t.track.length > 0 ? `
+<div class="section">
+  <div class="section-title">GPS-Track (${t.track.length} Punkte)</div>
+  <table class="track-table">
+    <tr><th>#</th><th>Zeit</th><th>Breitengrad</th><th>Längengrad</th></tr>
+    ${t.track.filter((_,i) => i % Math.max(1, Math.floor(t.track.length/20)) === 0).slice(0,20).map((p,i) => `
+      <tr><td>${i+1}</td><td>${formatTime(p.t)}</td><td>${p.lat.toFixed(5)}</td><td>${p.lng.toFixed(5)}</td></tr>
+    `).join('')}
+    ${t.track.length > 20 ? `<tr><td colspan="4" style="color:#7a9bb5;font-style:italic">… ${t.track.length} Punkte gesamt (Auszug)</td></tr>` : ''}
+  </table>
+</div>` : ''}
+
+<div class="footer">
+  <span>Boot Logbuch · Erstellt ${new Date().toLocaleDateString('de-DE')}</span>
+  <span>Fahrt-ID: ${t.id}</span>
+</div>
+
+</body></html>`;
+
+  const win = window.open('', '_blank');
+  if (win) {
+    win.document.write(html);
+    win.document.close();
+    setTimeout(() => win.print(), 800);
+  } else {
+    // Fallback: download as HTML
+    const blob = new Blob([html], {type: 'text/html'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `logbuch-${t.name.replace(/\s+/g,'-')}.html`;
+    a.click();
+    toast('📄 Als HTML gespeichert — im Browser drucken als PDF');
+  }
+}
+
+// ---- INIT ----
+updateUI();
+renderTrips();
+if (state.tripActive) startGPS();
+fetchWeather();
+fetchPegel();
+
+// Pegelstand alle 15 Minuten automatisch aktualisieren (sync mit Pegelonline)
+const PEGEL_INTERVAL = 15 * 60 * 1000;
+let pegelCountdown = PEGEL_INTERVAL;
+
+setInterval(() => {
+  pegelCountdown -= 1000;
+  if (pegelCountdown <= 0) {
+    pegelCountdown = PEGEL_INTERVAL;
+    fetchPegel();
+  }
+  // Countdown im Aktualisieren-Button anzeigen
+  const btn = document.querySelector('#pegel-card .weather-refresh');
+  if (btn) {
+    const min = Math.floor(pegelCountdown / 60000);
+    const sec = Math.floor((pegelCountdown % 60000) / 1000);
+    btn.textContent = `↻ Aktualisierung in ${min}:${sec.toString().padStart(2,'0')}`;
+  }
+}, 1000);
+
+// ---- OFFLINE DETECTION ----
+function updateOnlineStatus() {
+  document.getElementById('offline-banner').style.display = navigator.onLine ? 'none' : 'block';
+  document.querySelector('nav').style.marginTop = navigator.onLine ? '0' : '34px';
+  document.querySelectorAll('.page').forEach(p => p.style.paddingTop = navigator.onLine ? '80px' : '114px');
+}
+window.addEventListener('online', updateOnlineStatus);
+window.addEventListener('offline', updateOnlineStatus);
+updateOnlineStatus();
+
+// ---- PWA INSTALL PROMPT ----
+let deferredInstallPrompt = null;
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  // Show install banner after 3 seconds
+  setTimeout(() => {
+    if (!localStorage.getItem('pwa_installed')) {
+      document.getElementById('install-banner').style.display = 'block';
+    }
+  }, 3000);
+});
+
+function installApp() {
+  if (deferredInstallPrompt) {
+    deferredInstallPrompt.prompt();
+    deferredInstallPrompt.userChoice.then(result => {
+      if (result.outcome === 'accepted') {
+        localStorage.setItem('pwa_installed', '1');
+        document.getElementById('install-banner').style.display = 'none';
+        toast('✅ App installiert!');
+      }
+      deferredInstallPrompt = null;
+    });
+  } else {
+    toast('Menü → "Zum Startbildschirm hinzufügen"');
+  }
+}
+
+window.addEventListener('appinstalled', () => {
+  localStorage.setItem('pwa_installed', '1');
+  document.getElementById('install-banner').style.display = 'none';
+});
+
+</script>
+</body>
+</html>
