@@ -3,14 +3,23 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Boot Logbuch">
+<meta name="description" content="Motorboot Logbuch — Fahrten, Motor, Pegelstand, Wetter">
 <meta name="theme-color" content="#0a1628">
-<title>Boot Logbuch - Neues Layout Test</title>
+<title>Boot Logbuch</title>
+
+<link rel="manifest" href="data:application/manifest+json,%7B%22name%22%3A%22Boot%20Logbuch%22%2C%22short_name%22%3A%22Logbuch%22%2C%22description%22%3A%22Motorboot%20Logbuch%20f%C3%BCr%20Binnengew%C3%A4sser%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%230a1628%22%2C%22theme_color%22%3A%22%230a1628%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fsvg%2Bxml%2C%253Csvg%2520xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%2520viewBox%3D%270%25200%2520512%2520512%27%253E%253Crect%2520width%3D%27512%27%2520height%3D%27512%27%2520rx%3D%2780%27%2520fill%3D%27%25230a1628%27%2F%253E%253Ctext%2520y%3D%27380%27%2520x%3D%2780%27%2520font-size%3D%27380%27%253E%E2%9A%93%253C%2Ftext%253E%253C%2Fsvg%253E%22%2C%22sizes%22%3A%22512x512%22%2C%22type%22%3A%22image%2Fsvg%2Bxml%22%2C%22purpose%22%3A%22any%20maskable%22%7D%5D%7D">
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Mono:wght@400;700&family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <style>
-  /* --- GRUNDDESIGN --- */
+  /* --- GRUNDDESIGN & VARIABLEN --- */
   :root {
     --bg: #0a1628;
     --card-bg: #112240;
@@ -18,7 +27,11 @@
     --text-muted: #94a3b8;
     --accent: #38bdf8;
     --border: #1e293b;
+    --success: #22c55e;
+    --warning: #f59e0b;
+    --danger: #ef4444;
   }
+  
   body {
     margin: 0;
     font-family: 'Inter', sans-serif;
@@ -26,12 +39,34 @@
     color: var(--text);
     -webkit-tap-highlight-color: transparent;
   }
-  h1, h2 { font-family: 'Bebas Neue', sans-serif; letter-spacing: 1px; margin-top: 0; }
-  
-  /* --- UX-VERBESSERUNG 2: BOTTOM NAVIGATION --- */
+
+  h1, h2, h3 { 
+    font-family: 'Bebas Neue', sans-serif; 
+    letter-spacing: 1px; 
+    margin-top: 0; 
+  }
+
+  /* --- BANNERS (Offline / Install) --- */
+  #offline-banner, #install-banner {
+    display: none;
+    background: var(--warning);
+    color: #000;
+    text-align: center;
+    padding: 10px;
+    font-weight: 600;
+    font-size: 14px;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 2000;
+  }
+  #install-banner { background: var(--accent); color: #fff; cursor: pointer; }
+
+  /* --- BOTTOM NAVIGATION (UX Optimiert) --- */
   nav {
     position: fixed;
-    bottom: 0; /* Menü sitzt unten! */
+    bottom: 0; /* Unten am Bildschirmrand */
     left: 0;
     right: 0;
     background: rgba(10, 22, 40, 0.95);
@@ -39,10 +74,10 @@
     border-top: 1px solid var(--border);
     display: flex;
     justify-content: space-around;
-    /* padding-bottom nutzt den env() Wert für iPhones/moderne Androids mit Wischgesten */
-    padding: 12px 0 calc(12px + env(safe-area-inset-bottom));
+    padding: 12px 0 calc(12px + env(safe-area-inset-bottom)); /* iOS Wisch-Balken Fix */
     z-index: 1000;
   }
+
   nav button {
     background: none;
     border: none;
@@ -51,13 +86,13 @@
     flex-direction: column;
     align-items: center;
     gap: 6px;
-    /* UX-VERBESSERUNG 3: Schriftgröße von 6px auf 12px erhöht */
-    font-size: 12px; 
+    font-size: 12px; /* Gut lesbar */
     font-family: 'Inter', sans-serif;
     font-weight: 600;
     cursor: pointer;
     transition: transform 0.1s, color 0.2s;
   }
+
   nav button:active { transform: scale(0.9); }
   nav button.active { color: var(--accent); }
   nav button svg { width: 24px; height: 24px; fill: currentColor; }
@@ -65,7 +100,7 @@
   /* --- SEITEN-INHALT --- */
   .page {
     display: none;
-    /* Extra Padding unten (100px), damit die neue Bottom-Nav den Text nicht verdeckt! */
+    /* Platz oben für Banners, Platz unten für Bottom-Nav */
     padding: 24px 16px 100px 16px; 
   }
   .page.active { display: block; }
@@ -77,15 +112,51 @@
     padding: 16px;
     margin-bottom: 16px;
   }
-  
+
   .tech-text {
     font-family: 'Space Mono', monospace;
     color: var(--accent);
     font-size: 16px;
   }
+
+  /* --- BUTTONS --- */
+  .btn {
+    background: var(--accent);
+    color: #000;
+    border: none;
+    padding: 12px 20px;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 14px;
+    width: 100%;
+  }
+  .btn:active { transform: scale(0.98); opacity: 0.9; }
+
+  /* Toast Messages */
+  #toast {
+    position: fixed;
+    bottom: 90px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(255,255,255,0.9);
+    color: #000;
+    padding: 10px 20px;
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: 600;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s;
+    z-index: 3000;
+  }
+  #toast.show { opacity: 1; }
 </style>
 </head>
 <body>
+
+  <div id="offline-banner">⚠️ Keine Internetverbindung (Offline-Modus)</div>
+  <div id="install-banner" onclick="installApp()">📲 Tippe hier, um die App zu installieren</div>
 
   <nav id="main-nav">
     <button onclick="switchTab('dashboard')" class="active" id="btn-dashboard">
@@ -104,21 +175,19 @@
 
   <div id="dashboard" class="page active">
     <h1>⚓ Dashboard</h1>
+    
     <div class="card">
       <h2>Letzte GPS Position</h2>
-      <p class="tech-text">N 53° 33.066'<br>E 009° 59.622'</p>
-      <p style="font-size: 12px; color: var(--text-muted);">Aktualisiert vor 2 Min</p>
+      <p id="gps-coords" class="tech-text">Warte auf GPS...</p>
+      <button class="btn" onclick="updateGPS()" style="margin-top: 10px;">Position aktualisieren</button>
     </div>
+
     <div class="card">
       <h2>Motor Status</h2>
       <div style="display: flex; gap: 10px;">
         <div style="flex: 1; text-align: center; padding: 10px; background: rgba(56, 189, 248, 0.1); border-radius: 8px;">
           <span style="font-size: 24px;">0</span><br>
-          <span style="font-size: 10px; color: var(--text-muted);">U/MIN</span>
-        </div>
-        <div style="flex: 1; text-align: center; padding: 10px; background: rgba(56, 189, 248, 0.1); border-radius: 8px;">
-          <span style="font-size: 24px;">--</span><br>
-          <span style="font-size: 10px; color: var(--text-muted);">KNOTEN</span>
+          <span style="font-size: 10px; color: var(--text-muted);">BETRIEBSSTUNDEN</span>
         </div>
       </div>
     </div>
@@ -127,33 +196,127 @@
   <div id="logbuch" class="page">
     <h1>📝 Logbuch</h1>
     <div class="card">
-      <p>Hier würden deine Einträge für Crew, Wetter und Notizen stehen.</p>
-      <p><i>Scrolle mal nach unten, um zu sehen, wie die Bottom-Navigation immer sichtbar bleibt und nichts vom Text verdeckt.</i></p>
-      <br><br><br><br><br><br><br><br><br><br><br><br>
-      <p>Hier ist das Ende des Logbuchs.</p>
+      <h2>Neuer Eintrag</h2>
+      <textarea style="width: 100%; height: 80px; background: #0a1628; color: #fff; border: 1px solid #1e293b; border-radius: 8px; padding: 8px; box-sizing: border-box;" placeholder="Besondere Vorkommnisse..."></textarea>
+      <button class="btn" style="margin-top: 10px;" onclick="toast('Eintrag gespeichert!')">Speichern</button>
     </div>
   </div>
 
   <div id="map" class="page">
-    <h1>🗺️ Karte & Tracker</h1>
-    <div class="card" style="height: 300px; display: flex; align-items: center; justify-content: center; background: #1e293b;">
-      <p style="color: var(--text-muted);">[ Hier würde die Leaflet Karte laden ]</p>
+    <h1>🗺️ Karte</h1>
+    <div class="card" style="padding: 0; overflow: hidden;">
+      <div id="leaflet-map" style="height: 400px; width: 100%; background: #1e293b;"></div>
     </div>
   </div>
 
+  <div id="toast">Nachricht</div>
+
   <script>
+    // --- TABS WECHSELN ---
     function switchTab(tabId) {
-      // Alle Pages verstecken
       document.querySelectorAll('.page').forEach(page => page.classList.remove('active'));
-      // Alle Buttons zurücksetzen
       document.querySelectorAll('nav button').forEach(btn => btn.classList.remove('active'));
-      
-      // Geklickte Seite zeigen
       document.getElementById(tabId).classList.add('active');
       document.getElementById('btn-' + tabId).classList.add('active');
-      
       window.scrollTo(0,0);
+      
+      // Leaflet Map Fix, wenn der Tab sichtbar wird
+      if(tabId === 'map' && myMap) {
+        setTimeout(() => myMap.invalidateSize(), 100);
+      }
     }
+
+    // --- TOAST NACHRICHTEN ---
+    function toast(msg) {
+      const t = document.getElementById('toast');
+      t.innerText = msg;
+      t.classList.add('show');
+      setTimeout(() => t.classList.remove('show'), 3000);
+    }
+
+    // --- OFFLINE / ONLINE STATUS ---
+    function updateOnlineStatus() {
+      const isOnline = navigator.onLine;
+      document.getElementById('offline-banner').style.display = isOnline ? 'none' : 'block';
+      // Padding der Pages anpassen, falls Banner sichtbar ist
+      document.querySelectorAll('.page').forEach(p => p.style.paddingTop = isOnline ? '24px' : '60px');
+    }
+    window.addEventListener('online', updateOnlineStatus);
+    window.addEventListener('offline', updateOnlineStatus);
+    updateOnlineStatus(); // Init beim Start
+
+    // --- PWA INSTALLATION ---
+    let deferredInstallPrompt = null;
+    window.addEventListener('beforeinstallprompt', e => {
+      e.preventDefault();
+      deferredInstallPrompt = e;
+      setTimeout(() => {
+        if (!localStorage.getItem('pwa_installed')) {
+          document.getElementById('install-banner').style.display = 'block';
+        }
+      }, 3000);
+    });
+
+    function installApp() {
+      if (deferredInstallPrompt) {
+        deferredInstallPrompt.prompt();
+        deferredInstallPrompt.userChoice.then(result => {
+          if (result.outcome === 'accepted') {
+            localStorage.setItem('pwa_installed', '1');
+            document.getElementById('install-banner').style.display = 'none';
+            toast('✅ App installiert!');
+          }
+          deferredInstallPrompt = null;
+        });
+      } else {
+        toast('Menü → "Zum Startbildschirm hinzufügen"');
+      }
+    }
+
+    window.addEventListener('appinstalled', () => {
+      localStorage.setItem('pwa_installed', '1');
+      document.getElementById('install-banner').style.display = 'none';
+    });
+
+    // --- GPS LOGIK ---
+    function updateGPS() {
+      const coordsText = document.getElementById('gps-coords');
+      coordsText.innerText = "Suche Satelliten...";
+      
+      if ('geolocation' in navigator) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const lat = pos.coords.latitude.toFixed(4);
+            const lon = pos.coords.longitude.toFixed(4);
+            coordsText.innerHTML = `N ${lat}°<br>E ${lon}°`;
+            toast('GPS aktualisiert');
+          },
+          (err) => {
+            coordsText.innerText = "GPS Fehler / Blockiert";
+            console.warn("GPS Error:", err);
+            // Fallback für lokales Testen ohne HTTPS
+            if(window.location.protocol === 'file:') {
+               toast("GPS benötigt HTTPS oder APK!");
+            }
+          },
+          { enableHighAccuracy: true, timeout: 10000 }
+        );
+      } else {
+        coordsText.innerText = "GPS nicht unterstützt";
+      }
+    }
+
+    // --- LEAFLET MAP INITIALISIERUNG ---
+    let myMap = null;
+    window.addEventListener('DOMContentLoaded', () => {
+      myMap = L.map('leaflet-map').setView([53.5511, 9.9937], 10); // Standard Hamburg
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap'
+      }).addTo(myMap);
+      
+      // Beim ersten Laden einmal GPS abrufen
+      updateGPS();
+    });
   </script>
 </body>
 </html>
