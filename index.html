@@ -59,7 +59,7 @@
   /* FAB group — draggable */
   .fab-group {
     position: fixed; right: 20px; top: 200px;
-    display: flex; flex-direction: column; gap: 8px;
+    display: flex; flex-direction: column; gap: 6px;
     z-index: 1000; align-items: center;
     touch-action: none; user-select: none;
     background: rgba(2, 6, 23, 0.15);
@@ -67,7 +67,7 @@
     -webkit-backdrop-filter: blur(12px);
     border: 2px solid rgba(56,189,248,0.35);
     border-radius: 32px;
-    padding: 6px 6px 8px 6px;
+    padding: 5px 5px 6px 5px;
     box-shadow: 0 4px 24px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.12), inset 0 -1px 0 rgba(0,0,0,0.3), inset 1px 0 0 rgba(255,255,255,0.06), inset -1px 0 0 rgba(0,0,0,0.2);
   }
   .fab-drag-handle {
@@ -82,15 +82,15 @@
     background: var(--text-muted); border-radius: 2px;
   }
   .fab {
-    width: 54px; height: 54px; border-radius: 50%;
+    width: 48px; height: 48px; border-radius: 50%;
     background: var(--accent); color: #000; border: none;
     box-shadow: 0 0 20px rgba(56,189,248,0.4);
     display: flex; align-items: center; justify-content: center;
     cursor: pointer; flex-shrink: 0;
   }
   .fab.active { background: var(--recording); animation: pulse 1.5s infinite; color: #fff; }
-  .fab.fab-event { background: var(--accent2); box-shadow: 0 0 20px rgba(129,140,248,0.4); color: #fff; width: 44px; height: 44px; }
-  .fab.fab-crew  { background: var(--green);   box-shadow: 0 0 20px rgba(52,211,153,0.4);  color: #000; width: 44px; height: 44px; }
+  .fab.fab-event { background: var(--accent2); box-shadow: 0 0 20px rgba(129,140,248,0.4); color: #fff; width: 38px; height: 38px; }
+  .fab.fab-crew  { background: var(--green);   box-shadow: 0 0 20px rgba(52,211,153,0.4);  color: #000; width: 40px; height: 40px; }
 
   @keyframes pulse {
     0%   { box-shadow: 0 0 0 0    rgba(239,68,68,0.7); }
@@ -280,6 +280,26 @@
   <button class="btn-secondary" style="margin-top:10px;" onclick="document.getElementById('station-dialog').close()">Schließen</button>
 </dialog>
 
+<dialog id="radar-dialog">
+  <div class="dlg-title" style="color:var(--accent);">Wetterradar</div>
+  <div style="font-size:11px;color:var(--text-muted);margin-bottom:12px;">Öffnet externen Dienst im Browser</div>
+  <div style="display:flex;flex-direction:column;gap:8px;">
+    <button class="btn-primary" onclick="openRadar('https://www.dwd.de/DE/leistungen/radarbild_film/radarbild_film.html')" style="text-align:left;padding:12px 16px;">
+      🌧 DWD Radar — Deutscher Wetterdienst
+    </button>
+    <button class="btn-primary" style="background:rgba(56,189,248,0.15);color:var(--accent);border:1px solid var(--tile-border);text-align:left;padding:12px 16px;" onclick="openRadar('https://www.windy.com/?rain,53.5,10.0,9')">
+      🌬 Windy — Wind & Regen
+    </button>
+    <button class="btn-primary" style="background:rgba(56,189,248,0.15);color:var(--accent);border:1px solid var(--tile-border);text-align:left;padding:12px 16px;" onclick="openRadar('https://kachelmannwetter.com/de/regenradar/hamburg')">
+      📡 Kachelmann — Regenradar Hamburg
+    </button>
+    <button class="btn-primary" style="background:rgba(129,140,248,0.15);color:var(--accent2);border:1px solid rgba(129,140,248,0.3);text-align:left;padding:12px 16px;" onclick="openRadar('https://www.windy.com/?waves,53.5,10.0,9')">
+      🌊 Windy — Seegang & Wellen
+    </button>
+  </div>
+  <button class="btn-secondary" style="margin-top:10px;" onclick="document.getElementById('radar-dialog').close()">Schließen</button>
+</dialog>
+
 <!-- NAV -->
 <nav>
   <button onclick="switchTab('dash')" id="btn-dash" class="active">
@@ -296,9 +316,9 @@
 <!-- FAB GROUP -->
 <div class="fab-group" id="fab-group">
   <div style="position:relative; display:flex; align-items:center; justify-content:center;">
-    <svg width="50" height="50" viewBox="0 0 50 50" style="position:absolute;top:0;left:0;pointer-events:none;z-index:2;">
-      <defs><path id="crewCircle" d="M 25,25 m -16,0 a 16,16 0 1,1 32,0 a 16,16 0 1,1 -32,0"/></defs>
-      <text font-family="Inter,sans-serif" font-size="7" font-weight="700" fill="rgba(0,0,0,0.65)" letter-spacing="3">
+    <svg width="40" height="40" viewBox="0 0 40 40" style="position:absolute;top:0;left:0;pointer-events:none;z-index:2;">
+      <defs><path id="crewCircle" d="M 20,20 m -13,0 a 13,13 0 1,1 26,0 a 13,13 0 1,1 -26,0"/></defs>
+      <text font-family="Inter,sans-serif" font-size="6" font-weight="700" fill="rgba(0,0,0,0.65)" letter-spacing="2.2">
         <textPath href="#crewCircle" startOffset="8%">CREW · CREW · </textPath>
       </text>
     </svg>
@@ -314,9 +334,9 @@
     </svg>
   </button>
   <div style="position:relative; display:flex; align-items:center; justify-content:center;">
-    <svg width="60" height="60" viewBox="0 0 60 60" style="position:absolute;top:0;left:0;pointer-events:none;z-index:2;">
-      <defs><path id="trackCircle" d="M 30,30 m -20,0 a 20,20 0 1,1 40,0 a 20,20 0 1,1 -40,0"/></defs>
-      <text font-family="Inter,sans-serif" font-size="7.5" font-weight="700" fill="rgba(0,0,0,0.7)" letter-spacing="2.5">
+    <svg width="48" height="48" viewBox="0 0 48 48" style="position:absolute;top:0;left:0;pointer-events:none;z-index:2;">
+      <defs><path id="trackCircle" d="M 24,24 m -16,0 a 16,16 0 1,1 32,0 a 16,16 0 1,1 -32,0"/></defs>
+      <text font-family="Inter,sans-serif" font-size="6.5" font-weight="700" fill="rgba(0,0,0,0.7)" letter-spacing="2">
         <textPath href="#trackCircle" startOffset="6%">TRACK · TRACK · </textPath>
       </text>
     </svg>
@@ -384,6 +404,31 @@
         <div style="font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:2px;">Tendenz</div>
         <div id="pegel-trend" style="font-size:26px;line-height:1;">—</div>
         <div id="pegel-trend-label" style="font-size:10px;color:var(--text-muted);">---</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- WETTER TILE -->
+  <div class="glass-tile" style="margin-top:12px;" id="weather-tile">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+      <span class="label">Wetter</span>
+      <button onclick="openRadarMenu()" style="background:rgba(56,189,248,0.1);border:1px solid var(--tile-border);color:var(--accent);border-radius:8px;padding:3px 10px;font-size:10px;font-weight:600;cursor:pointer;letter-spacing:0.5px;">RADAR ▾</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
+      <div>
+        <div style="font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:2px;">Wind</div>
+        <div class="font-mono" style="font-size:22px;font-weight:700;line-height:1;" id="wx-wind">--</div>
+        <div style="font-size:10px;color:var(--text-muted);" id="wx-wind-unit">kn</div>
+      </div>
+      <div>
+        <div style="font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:2px;">Richtung</div>
+        <div class="font-mono" style="font-size:22px;font-weight:700;line-height:1;" id="wx-dir">--</div>
+        <div style="font-size:10px;color:var(--text-muted);">°</div>
+      </div>
+      <div>
+        <div style="font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:2px;">Temp</div>
+        <div class="font-mono" style="font-size:22px;font-weight:700;line-height:1;" id="wx-temp">--</div>
+        <div style="font-size:10px;color:var(--text-muted);" id="wx-desc">°C</div>
       </div>
     </div>
   </div>
@@ -812,11 +857,24 @@ function fmtTide(ts){
 // ── WETTER ────────────────────────────────────────────────────────────────────
 async function fetchWeather(lat, lng) {
   try {
-    // Use actual GPS position instead of hardcoded Hamburg coords
     const url=`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,windspeed_10m,winddirection_10m,weathercode&wind_speed_unit=kn`;
     const r=await fetch(url); const d=await r.json(); const cc=d.current;
-    currentWeather={temp:cc.temperature_2m,wind:cc.windspeed_10m.toFixed(1),windDir:cc.winddirection_10m,desc:wxCode(cc.weathercode),ts:Date.now()};
+    currentWeather={temp:cc.temperature_2m,wind:parseFloat(cc.windspeed_10m).toFixed(1),windDir:cc.winddirection_10m,desc:wxCode(cc.weathercode),ts:Date.now()};
+    // Update weather tile
+    document.getElementById('wx-wind').innerText = currentWeather.wind;
+    document.getElementById('wx-dir').innerText  = currentWeather.windDir;
+    document.getElementById('wx-temp').innerText = currentWeather.temp;
+    document.getElementById('wx-desc').innerText = currentWeather.desc;
   } catch(e){}
+}
+
+function openRadarMenu() {
+  document.getElementById('radar-dialog').showModal();
+}
+
+function openRadar(url) {
+  document.getElementById('radar-dialog').close();
+  window.open(url, '_blank');
 }
 
 function wxCode(c){
@@ -870,9 +928,9 @@ async function exportTripPDF(idx) {
     doc.setFillColor(2,6,23); doc.rect(0,0,W,42,'F');
     doc.setTextColor(56,189,248); doc.setFont('helvetica','bold'); doc.setFontSize(20);
     doc.text('GLASS COCKPIT  —  LOGBUCH',M,15);
-    doc.setFontSize(13); doc.setTextColor(241,245,249);
+    doc.setFontSize(13); doc.setTextColor(220,235,255);
     doc.text(trip.name,M,26);
-    doc.setFontSize(9); doc.setTextColor(148,163,184);
+    doc.setFontSize(9); doc.setTextColor(30,60,120);
     doc.text(`${fmtDate(trip.start)}   Export: ${fmtDate(Date.now())}`,M,35);
     y=50;
 
@@ -889,9 +947,9 @@ async function exportTripPDF(idx) {
     ];
     sumItems.forEach((item,i)=>{
       const x=M+6+i*46;
-      doc.setTextColor(148,163,184); doc.setFontSize(7); doc.setFont('helvetica','bold');
+      doc.setTextColor(0,60,140); doc.setFontSize(7); doc.setFont('helvetica','bold');
       doc.text(item[0],x,y+9);
-      doc.setTextColor(241,245,249); doc.setFontSize(9); doc.setFont('helvetica','normal');
+      doc.setTextColor(10,40,100); doc.setFontSize(9); doc.setFont('helvetica','normal');
       const lines=item[1].split('\n');
       lines.forEach((l,li)=>doc.text(l,x,y+17+li*6));
     });
@@ -901,7 +959,7 @@ async function exportTripPDF(idx) {
     if(trip.crew&&trip.crew.length){
       doc.setTextColor(52,211,153); doc.setFont('helvetica','bold'); doc.setFontSize(10);
       doc.text('CREW AN BORD',M,y); y+=6;
-      doc.setTextColor(241,245,249); doc.setFont('helvetica','normal'); doc.setFontSize(10);
+      doc.setTextColor(10,40,100); doc.setFont('helvetica','normal'); doc.setFontSize(10);
       doc.text(trip.crew.join('   ·   '),M,y); y+=10;
     }
 
@@ -910,7 +968,7 @@ async function exportTripPDF(idx) {
       const w=trip.weather;
       doc.setTextColor(56,189,248); doc.setFont('helvetica','bold'); doc.setFontSize(10);
       doc.text('WETTERLAGE',M,y); y+=6;
-      doc.setTextColor(241,245,249); doc.setFont('helvetica','normal'); doc.setFontSize(10);
+      doc.setTextColor(10,40,100); doc.setFont('helvetica','normal'); doc.setFontSize(10);
       doc.text(`${w.desc}   ${w.temp}°C   Wind ${w.wind} kn (${w.windDir}°)`,M,y); y+=10;
     }
 
@@ -1048,7 +1106,7 @@ async function exportTripPDF(idx) {
     for(let p=1;p<=total;p++){
       doc.setPage(p);
       doc.setFillColor(2,6,23); doc.rect(0,288,W,10,'F');
-      doc.setFontSize(7); doc.setTextColor(148,163,184); doc.setFont('helvetica','normal');
+      doc.setFontSize(7); doc.setTextColor(30,60,120); doc.setFont('helvetica','normal');
       doc.text(`Glass Cockpit Logbuch  ·  ${trip.name}  ·  Seite ${p}/${total}`,M,294);
     }
 
@@ -1194,11 +1252,11 @@ function initFabDrag() {
   // Restore saved position
   const savedTop = parseInt(localStorage.getItem('fab_top'));
   if (savedTop) {
-    group.style.top = Math.max(60, Math.min(window.innerHeight - 220, savedTop)) + 'px';
+    group.style.top = Math.max(10, Math.min(window.innerHeight - 220, savedTop)) + 'px';
   }
 
   function clamp(val) {
-    return Math.max(60, Math.min(window.innerHeight - group.offsetHeight - 20, val));
+    return Math.max(10, Math.min(window.innerHeight - group.offsetHeight - 20, val));
   }
 
   function onStart(y) {
