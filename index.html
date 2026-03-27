@@ -790,30 +790,38 @@ function renderPegelData(data) {
   const current = data[data.length-1].value;
   document.getElementById('pegel-val').innerText = current;
 
-  // Tendency from last ~15 min (3 readings at 5 min intervals)
-  const recent = data.slice(-4).map(d=>d.value);
-  const delta = recent[recent.length-1] - recent[0];
   const trendEl = document.getElementById('pegel-trend');
   const trendLbl = document.getElementById('pegel-trend-label');
 
-  // Find most recent peak/trough to check proximity (10 min = 600000ms)
-  const win0=12;
-  let nearTide = false;
-  const NEAR_MS = 10 * 60 * 1000; // 10 minutes
-  const nowMs = Date.now();
-  for(let i=win0; i<data.length-win0; i++){
-    const v=data[i].value, sl=data.slice(i-win0,i+win0+1).map(m=>m.value);
-    if(v===Math.max(...sl)||v===Math.min(...sl)){
-      const tideTs = new Date(data[i].timestamp).getTime();
-      if(Math.abs(nowMs - tideTs) < NEAR_MS){ nearTide=true; break; }
-    }
-  }
+  // Use last 8 readings (~40 min) to detect direction and turning point
+  // Pegelonline gives readings every 5 minutes
+  const tail = data.slice(-8).map(d => d.value);
 
-  if (nearTide) {
+  // Short-term delta: last 15 min (3 readings)
+  const shortDelta = tail[tail.length-1] - tail[tail.length-4];
+  // Medium delta: last 35 min
+  const longDelta  = tail[tail.length-1] - tail[0];
+
+  // Detect turning point: was rising/falling but now reversed AND total movement small
+  const wasRising  = longDelta > 8;
+  const wasFalling = longDelta < -8;
+  const nowSlowing = Math.abs(shortDelta) < 4; // nearly flat in last 15 min
+  const nearTurn   = (wasRising || wasFalling) && nowSlowing;
+
+  // Also check: last 3 readings form a local peak/trough
+  const last3 = tail.slice(-3);
+  const isPeak   = last3[1] >= last3[0] && last3[1] >= last3[2];
+  const isTrough = last3[1] <= last3[0] && last3[1] <= last3[2];
+
+  if (isPeak || isTrough || nearTurn) {
     trendEl.innerText='↔'; trendEl.style.color='#f59e0b'; trendLbl.innerText='Kentert';
-  } else if (delta > 3) {
+  } else if (shortDelta > 4) {
     trendEl.innerText='↑'; trendEl.style.color='#34d399'; trendLbl.innerText='Steigend';
-  } else if (delta < -3) {
+  } else if (shortDelta < -4) {
+    trendEl.innerText='↓'; trendEl.style.color='#f87171'; trendLbl.innerText='Fallend';
+  } else if (longDelta > 8) {
+    trendEl.innerText='↑'; trendEl.style.color='#34d399'; trendLbl.innerText='Steigend';
+  } else if (longDelta < -8) {
     trendEl.innerText='↓'; trendEl.style.color='#f87171'; trendLbl.innerText='Fallend';
   } else {
     trendEl.innerText='→'; trendEl.style.color='#94a3b8'; trendLbl.innerText='Stabil';
