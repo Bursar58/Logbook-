@@ -191,7 +191,7 @@
 
   function initMap() {
     myMap = L.map('leaflet-map', { zoomControl: false }).setView([53.55, 9.99], 13);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
       attribution: '&copy; <a href="https://carto.com/">CARTO</a>'
     }).addTo(myMap);
   }
@@ -231,7 +231,7 @@
       else marker.setLatLng(latlng);
       myMap.panTo(latlng);
 
-      if (tripActive && accuracy < 50) {
+      if (tripActive && accuracy < 200) {
         handleSmartTracking(latitude, longitude, speed, heading);
       }
     }, e => {
@@ -318,7 +318,7 @@
   function stopTrip() {
     tripActive = false;
     document.getElementById('fab').classList.remove('active');
-    if (tripPoints.length > 2) {
+    if (tripPoints.length > 1) {
       document.getElementById('trip-name').value = '';
       document.getElementById('save-dialog').showModal();
     } else {
