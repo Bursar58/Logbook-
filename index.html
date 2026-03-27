@@ -300,6 +300,26 @@
   <button class="btn-secondary" style="margin-top:10px;" onclick="document.getElementById('radar-dialog').close()">Schließen</button>
 </dialog>
 
+<dialog id="vessel-dialog">
+  <div class="dlg-title" style="color:var(--accent);">Schiff & Heimathafen</div>
+  <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">SCHIFFSNAME</div>
+  <input type="text" id="vessel-name-input" placeholder="z.B. Seeschwalbe" style="margin-top:0;">
+  <div style="font-size:11px;color:var(--text-muted);margin-top:10px;margin-bottom:4px;">HEIMATHAFEN</div>
+  <input type="text" id="vessel-port-input" placeholder="z.B. Hamburg" style="margin-top:0;">
+  <div style="font-size:11px;color:var(--text-muted);margin-top:10px;margin-bottom:4px;">SCHIFFSTYP</div>
+  <select id="vessel-type-input" style="margin-top:0;">
+    <option value="⛵">⛵ Segelboot</option>
+    <option value="🚤">🚤 Motorboot</option>
+    <option value="🛥">🛥 Motorjacht</option>
+    <option value="⛴">⛴ Fähre</option>
+    <option value="🚢">🚢 Großschiff</option>
+    <option value="🛶">🛶 Ruderboot / Kanu</option>
+    <option value="🏊">🏊 SUP / Kajak</option>
+  </select>
+  <button class="btn-primary" onclick="saveVessel()">Speichern</button>
+  <button class="btn-secondary" onclick="document.getElementById('vessel-dialog').close()">Abbrechen</button>
+</dialog>
+
 <!-- NAV -->
 <nav>
   <button onclick="switchTab('dash')" id="btn-dash" class="active">
@@ -351,7 +371,15 @@
 
 <!-- COCKPIT PAGE -->
 <div id="dash" class="page active">
-  <div class="font-bebas" style="font-size:24px; color:var(--accent); margin-bottom:16px;" id="dash-title">System Ready</div>
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+    <div>
+      <div class="font-bebas" style="font-size:24px; color:var(--accent); line-height:1;" id="dash-title">System Ready</div>
+      <div id="vessel-header" style="font-size:11px;color:var(--text-muted);margin-top:2px;display:none;"></div>
+    </div>
+    <button onclick="openVessel()" style="background:rgba(56,189,248,0.08);border:1px solid var(--tile-border);color:var(--text-muted);border-radius:10px;padding:5px 10px;font-size:10px;font-weight:600;cursor:pointer;letter-spacing:0.5px;">
+      ⚙ SCHIFF
+    </button>
+  </div>
 
   <div class="glass-tile" style="margin-bottom:12px;">
     <span class="label">Position</span>
@@ -468,6 +496,7 @@ let tripActive = false, tripStartTime = null, tripPoints = [];
 let lastSavedPoint = null, trackingReady = false;
 let tripEvents = [];
 let crewList = JSON.parse(localStorage.getItem('crew_list') || '[]');
+let vesselInfo = JSON.parse(localStorage.getItem('vessel_info') || 'null');
 let currentWeather = null;
 
 let lastEnvUpdate = 0;  // throttle env calls
@@ -482,6 +511,7 @@ const { jsPDF } = window.jspdf;
 window.onload = () => {
   initMap(); startGps(); renderLog();
   initFabDrag();
+  renderVesselHeader();
 };
 
 // ── HELPERS ───────────────────────────────────────────────────────────────────
@@ -937,7 +967,9 @@ async function exportTripPDF(idx) {
     doc.setTextColor(56,189,248); doc.setFont('helvetica','bold'); doc.setFontSize(20);
     doc.text('GLASS COCKPIT  —  LOGBUCH',M,15);
     doc.setFontSize(13); doc.setTextColor(220,235,255);
+    const vesselStr = trip.vessel && trip.vessel.name ? `${trip.vessel.type||'⛵'} ${trip.vessel.name}${trip.vessel.port?' · Heimathafen: '+trip.vessel.port:''}` : '';
     doc.text(trip.name,M,26);
+    if(vesselStr){doc.setFontSize(9);doc.setTextColor(30,60,120);doc.text(vesselStr,M,32);}
     doc.setFontSize(9); doc.setTextColor(30,60,120);
     doc.text(`${fmtDate(trip.start)}   Export: ${fmtDate(Date.now())}`,M,35);
     y=50;
@@ -1306,6 +1338,47 @@ function initFabDrag() {
   handle.addEventListener('mousedown', e => { onStart(e.clientY); e.preventDefault(); });
   document.addEventListener('mousemove', e => onMove(e.clientY));
   document.addEventListener('mouseup', onEnd);
+}
+
+// ── SCHIFF & HEIMATHAFEN ──────────────────────────────────────────────────────
+function openVessel() {
+  const v = vesselInfo || {};
+  document.getElementById('vessel-name-input').value = v.name || '';
+  document.getElementById('vessel-port-input').value = v.port || '';
+  const sel = document.getElementById('vessel-type-input');
+  if (v.type) {
+    for(let i=0;i<sel.options.length;i++) {
+      if(sel.options[i].value === v.type) { sel.selectedIndex=i; break; }
+    }
+  }
+  document.getElementById('vessel-dialog').showModal();
+}
+
+function saveVessel() {
+  vesselInfo = {
+    name: document.getElementById('vessel-name-input').value.trim(),
+    port: document.getElementById('vessel-port-input').value.trim(),
+    type: document.getElementById('vessel-type-input').value
+  };
+  localStorage.setItem('vessel_info', JSON.stringify(vesselInfo));
+  document.getElementById('vessel-dialog').close();
+  renderVesselHeader();
+  toast('Gespeichert ✓');
+}
+
+function renderVesselHeader() {
+  const el = document.getElementById('vessel-header');
+  const title = document.getElementById('dash-title');
+  if (!vesselInfo || (!vesselInfo.name && !vesselInfo.port)) {
+    el.style.display = 'none';
+    return;
+  }
+  const name = vesselInfo.name || '—';
+  const port = vesselInfo.port || '—';
+  const type = vesselInfo.type || '⛵';
+  title.innerText = `${type} ${name}`;
+  el.innerText = `Heimathafen: ${port}`;
+  el.style.display = 'block';
 }
 
 // ── SPEICHERVERWALTUNG ───────────────────────────────────────────────────────
