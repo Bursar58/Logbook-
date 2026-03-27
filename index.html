@@ -40,7 +40,7 @@
   .font-mono  { font-family: 'Space Mono', monospace; }
 
   .page { display: none; padding: 20px 16px 130px 16px; height: 100vh; overflow-y: auto; }
-  #dash { padding-right: 88px; } /* avoid FABs overlapping content */
+  /* FABs are now freely draggable — no padding-right needed */
   .page.active { display: block; }
 
   .dashboard-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
@@ -56,11 +56,25 @@
   .val   { font-family: 'Space Mono', monospace; font-size: 32px; font-weight: 700; line-height: 1; }
   .unit  { font-size: 14px; color: var(--text-muted); margin-left: 4px; }
 
-  /* FAB group */
+  /* FAB group — draggable */
   .fab-group {
-    position: fixed; bottom: 170px; right: 20px;
+    position: fixed; right: 20px; top: 200px;
     display: flex; flex-direction: column; gap: 12px;
     z-index: 1000; align-items: flex-end;
+    touch-action: none; user-select: none;
+  }
+  .fab-drag-handle {
+    width: 50px; height: 28px; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 5px;
+    cursor: grab; opacity: 0.6; margin-bottom: 4px; align-self: center;
+    background: rgba(255,255,255,0.06); border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.1);
+    touch-action: none;
+  }
+  .fab-drag-handle:active { cursor: grabbing; opacity: 1; }
+  .fab-drag-handle span {
+    display: block; width: 22px; height: 2px;
+    background: var(--text-muted); border-radius: 2px;
   }
   .fab {
     width: 60px; height: 60px; border-radius: 50%;
@@ -275,7 +289,10 @@
 </nav>
 
 <!-- FAB GROUP -->
-<div class="fab-group">
+<div class="fab-group" id="fab-group">
+  <div class="fab-drag-handle" id="fab-drag-handle" title="Ziehen zum Verschieben">
+    <span></span><span></span><span></span>
+  </div>
   <button class="fab fab-crew" onclick="openCrew()" title="Crew">
     <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
       <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/>
@@ -397,6 +414,7 @@ const { jsPDF } = window.jspdf;
 // ── INIT ──────────────────────────────────────────────────────────────────────
 window.onload = () => {
   initMap(); startGps(); renderLog();
+  initFabDrag();
 };
 
 // ── HELPERS ───────────────────────────────────────────────────────────────────
@@ -1115,6 +1133,65 @@ function cancelRevert() {
 function clearRevertTimers() {
   if (revertTimer)   { clearTimeout(revertTimer);   revertTimer = null; }
   if (revertInterval){ clearInterval(revertInterval); revertInterval = null; }
+}
+
+// ── FAB DRAG ─────────────────────────────────────────────────────────────────
+function initFabDrag() {
+  const group = document.getElementById('fab-group');
+  const handle = document.getElementById('fab-drag-handle');
+  if (!group || !handle) return;
+
+  let dragging = false, startY = 0, startTop = 0;
+
+  // Restore saved position
+  const savedTop = parseInt(localStorage.getItem('fab_top'));
+  if (savedTop) {
+    group.style.top = Math.max(60, Math.min(window.innerHeight - 220, savedTop)) + 'px';
+  }
+
+  function clamp(val) {
+    return Math.max(60, Math.min(window.innerHeight - group.offsetHeight - 20, val));
+  }
+
+  function onStart(y) {
+    dragging = true;
+    startY = y;
+    startTop = group.getBoundingClientRect().top;
+    group.style.transition = 'none';
+    group.style.opacity = '0.85';
+  }
+
+  function onMove(y) {
+    if (!dragging) return;
+    group.style.top = clamp(startTop + (y - startY)) + 'px';
+  }
+
+  function onEnd() {
+    if (!dragging) return;
+    dragging = false;
+    group.style.opacity = '1';
+    localStorage.setItem('fab_top', parseInt(group.style.top));
+  }
+
+  // ── Touch (passive:false is critical to allow preventDefault on iOS) ──
+  handle.addEventListener('touchstart', e => {
+    onStart(e.touches[0].clientY);
+    e.preventDefault(); // stops page scroll while dragging
+    e.stopPropagation();
+  }, { passive: false, capture: true });
+
+  handle.addEventListener('touchmove', e => {
+    onMove(e.touches[0].clientY);
+    e.preventDefault();
+  }, { passive: false, capture: true });
+
+  handle.addEventListener('touchend', onEnd, { passive: true });
+  handle.addEventListener('touchcancel', onEnd, { passive: true });
+
+  // ── Mouse ──
+  handle.addEventListener('mousedown', e => { onStart(e.clientY); e.preventDefault(); });
+  document.addEventListener('mousemove', e => onMove(e.clientY));
+  document.addEventListener('mouseup', onEnd);
 }
 
 // ── SPEICHERVERWALTUNG ───────────────────────────────────────────────────────
