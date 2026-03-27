@@ -40,6 +40,7 @@
   .font-mono  { font-family: 'Space Mono', monospace; }
 
   .page { display: none; padding: 20px 16px 130px 16px; height: 100vh; overflow-y: auto; }
+  #dash { padding-right: 88px; } /* avoid FABs overlapping content */
   .page.active { display: block; }
 
   .dashboard-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
@@ -57,7 +58,7 @@
 
   /* FAB group */
   .fab-group {
-    position: fixed; bottom: 100px; right: 20px;
+    position: fixed; bottom: 170px; right: 20px;
     display: flex; flex-direction: column; gap: 12px;
     z-index: 1000; align-items: flex-end;
   }
@@ -300,9 +301,10 @@
   </div>
 
   <div class="dashboard-grid">
-    <div class="glass-tile">
-      <span class="label">SOG</span>
-      <div class="val"><span id="sog-val">0.0</span><span class="unit">kn</span></div>
+    <div class="glass-tile" onclick="toggleSpeedUnit()" style="cursor:pointer;" title="Tippen zum Wechseln">
+      <span class="label" id="sog-label">SOG</span>
+      <div class="val"><span id="sog-val">0.0</span><span class="unit" id="sog-unit">kn</span></div>
+      <div style="font-size:9px;color:var(--text-muted);margin-top:4px;" id="sog-hint">⇄ kn / km/h</div>
     </div>
     <div class="glass-tile">
       <span class="label">Kurs</span>
@@ -377,6 +379,7 @@
 <script>
 // ── STATE ─────────────────────────────────────────────────────────────────────
 let myMap, marker, livePath, watchId;
+let speedUnit = localStorage.getItem('speed_unit') || 'kn'; // 'kn' or 'kmh'
 let tripActive = false, tripStartTime = null, tripPoints = [];
 let lastSavedPoint = null, trackingReady = false;
 let tripEvents = [];
@@ -423,6 +426,19 @@ function switchTab(id) {
 function fmtTime(ts) { return new Date(ts).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}); }
 function fmtDate(ts) { return new Date(ts).toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'}); }
 
+function formatSpeed(mps) {
+  if (speedUnit === 'kmh') return (mps * 3.6).toFixed(1);
+  return (mps * 1.94384).toFixed(1); // knots default
+}
+
+function toggleSpeedUnit() {
+  speedUnit = speedUnit === 'kn' ? 'kmh' : 'kn';
+  localStorage.setItem('speed_unit', speedUnit);
+  document.getElementById('sog-unit').innerText  = speedUnit === 'kn' ? 'kn' : 'km/h';
+  document.getElementById('sog-label').innerText = speedUnit === 'kn' ? 'SOG' : 'Geschw.';
+  toast(speedUnit === 'kn' ? 'Knoten (kn)' : 'Kilometer/Stunde');
+}
+
 // ── MAP ───────────────────────────────────────────────────────────────────────
 function initMap() {
   myMap = L.map('leaflet-map', { zoomControl: false }).setView([53.55, 9.99], 13);
@@ -441,7 +457,8 @@ function startGps() {
   }
   watchId = navigator.geolocation.watchPosition(pos => {
     const { latitude, longitude, speed, heading } = pos.coords;
-    const sog = speed ? (speed * 1.94384).toFixed(1) : '0.0';
+    const rawSpeed = speed || 0;
+    const sog = formatSpeed(rawSpeed);
     const cog = heading !== null ? Math.round(heading) : '---';
     const lat = toDDM(latitude, true);
     const lng = toDDM(longitude, false);
@@ -450,6 +467,8 @@ function startGps() {
       `<div>${lat.ddm}</div><div style="font-size:11px;color:var(--text-muted);margin-bottom:5px;">${lat.dec}°</div>` +
       `<div>${lng.ddm}</div><div style="font-size:11px;color:var(--text-muted);">${lng.dec}°</div>`;
     document.getElementById('sog-val').innerText = sog;
+    document.getElementById('sog-unit').innerText = speedUnit === 'kn' ? 'kn' : 'km/h';
+    document.getElementById('sog-label').innerText = speedUnit === 'kn' ? 'SOG' : 'Geschw.';
     document.getElementById('cog-val').innerText = cog;
 
     const ll = [latitude, longitude];
