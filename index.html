@@ -176,6 +176,15 @@
   let myMap, marker, livePath, watchId;
   let tripActive = false, tripStartTime = null, tripPoints = [];
   let lastSavedPoint = null;
+  let trackingReady = false; // 10s warm-up delay
+
+  function toDDM(deg, isLat) {
+    const d = Math.floor(Math.abs(deg));
+    const m = ((Math.abs(deg) - d) * 60).toFixed(3);
+    const dir = isLat ? (deg >= 0 ? 'N' : 'S') : (deg >= 0 ? 'E' : 'W');
+    const dPad = isLat ? String(d).padStart(2,'0') : String(d).padStart(3,'0');
+    return { ddm: `${dPad}° ${m}′ ${dir}`, dec: Math.abs(deg).toFixed(6) };
+  }
 
   // Config
   const STATION = "HAMBURG ST. PAULI";
@@ -191,9 +200,20 @@
 
   function initMap() {
     myMap = L.map('leaflet-map', { zoomControl: false }).setView([53.55, 9.99], 13);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-      attribution: '&copy; <a href="https://carto.com/">CARTO</a>'
-    }).addTo(myMap);
+    // Base layer: OSM standard (light, good contrast for sea chart overlay)
+    const baseLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a>',
+      maxZoom: 19
+    });
+    baseLayer.addTo(myMap);
+
+    // OpenSeaMap nautical overlay (depth contours, buoys, lights, harbours)
+    const seaMap = L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', {
+      attribution: '&copy; <a href="https://www.openseamap.org/">OpenSeaMap</a>',
+      opacity: 1,
+      maxZoom: 18
+    });
+    seaMap.addTo(myMap);
   }
 
   function switchTab(id) {
@@ -222,7 +242,11 @@
       const sog = speed ? (speed * 1.94384).toFixed(1) : "0.0";
       const cog = heading !== null ? Math.round(heading) : "---";
 
-      document.getElementById('pos-display').innerHTML = `N ${latitude.toFixed(5)}<br>E ${longitude.toFixed(5)}`;
+      const lat = toDDM(latitude, true);
+      const lng = toDDM(longitude, false);
+      document.getElementById('pos-display').innerHTML =
+        `<div>${lat.ddm}</div><div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">${lat.dec}°</div>` +
+        `<div>${lng.ddm}</div><div style="font-size:11px;color:var(--text-muted);">${lng.dec}°</div>`;
       document.getElementById('sog-val').innerText = sog;
       document.getElementById('cog-val').innerText = cog;
 
@@ -231,7 +255,7 @@
       else marker.setLatLng(latlng);
       myMap.panTo(latlng);
 
-      if (tripActive && accuracy < 200) {
+      if (tripActive && trackingReady) {
         handleSmartTracking(latitude, longitude, speed, heading);
       }
     }, e => {
@@ -293,12 +317,17 @@
     const fab = document.getElementById('fab');
     if (!tripActive) {
       tripActive = true;
+      trackingReady = false;
       tripStartTime = Date.now();
       tripPoints = [];
       lastSavedPoint = null;
       if (livePath) { myMap.removeLayer(livePath); livePath = null; }
       fab.classList.add('active');
-      toast("Tracking gestartet");
+      toast("Tracking startet in 10 Sek...");
+      setTimeout(() => {
+        trackingReady = true;
+        toast("Tracking aktiv ✓");
+      }, 10000);
       updateTimer();
     } else {
       stopTrip();
