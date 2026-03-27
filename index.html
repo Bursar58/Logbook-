@@ -60,20 +60,25 @@
   .fab-group {
     position: fixed; right: 20px; top: 200px;
     display: flex; flex-direction: column; gap: 12px;
-    z-index: 1000; align-items: flex-end;
+    z-index: 1000; align-items: center;
     touch-action: none; user-select: none;
+    background: rgba(2, 6, 23, 0.15);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 2px solid rgba(56,189,248,0.35);
+    border-radius: 36px;
+    padding: 10px 8px 12px 8px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.12), inset 0 -1px 0 rgba(0,0,0,0.3), inset 1px 0 0 rgba(255,255,255,0.06), inset -1px 0 0 rgba(0,0,0,0.2);
   }
   .fab-drag-handle {
-    width: 50px; height: 28px; display: flex; flex-direction: column;
-    align-items: center; justify-content: center; gap: 5px;
-    cursor: grab; opacity: 0.6; margin-bottom: 4px; align-self: center;
-    background: rgba(255,255,255,0.06); border-radius: 10px;
-    border: 1px solid rgba(255,255,255,0.1);
+    width: 32px; height: 18px; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 4px;
+    cursor: grab; opacity: 0.5; margin-bottom: 2px;
     touch-action: none;
   }
   .fab-drag-handle:active { cursor: grabbing; opacity: 1; }
   .fab-drag-handle span {
-    display: block; width: 22px; height: 2px;
+    display: block; width: 18px; height: 2px;
     background: var(--text-muted); border-radius: 2px;
   }
   .fab {
@@ -293,19 +298,35 @@
   <div class="fab-drag-handle" id="fab-drag-handle" title="Ziehen zum Verschieben">
     <span></span><span></span><span></span>
   </div>
-  <button class="fab fab-crew" onclick="openCrew()" title="Crew">
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/>
+  <div style="position:relative; display:flex; align-items:center; justify-content:center;">
+    <svg width="50" height="50" viewBox="0 0 50 50" style="position:absolute;top:0;left:0;pointer-events:none;z-index:2;">
+      <defs><path id="crewCircle" d="M 25,25 m -16,0 a 16,16 0 1,1 32,0 a 16,16 0 1,1 -32,0"/></defs>
+      <text font-family="Inter,sans-serif" font-size="7" font-weight="700" fill="rgba(0,0,0,0.65)" letter-spacing="3">
+        <textPath href="#crewCircle" startOffset="8%">CREW · CREW · </textPath>
+      </text>
     </svg>
-  </button>
+    <button class="fab fab-crew" onclick="openCrew()" title="Crew">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/>
+      </svg>
+    </button>
+  </div>
   <button class="fab fab-event" id="fab-event" onclick="openEvent()" title="Ereignis" style="display:none;">
     <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
       <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
     </svg>
   </button>
-  <button class="fab" id="fab-trip" onclick="toggleTrip()">
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="8"/></svg>
-  </button>
+  <div style="position:relative; display:flex; align-items:center; justify-content:center;">
+    <svg width="60" height="60" viewBox="0 0 60 60" style="position:absolute;top:0;left:0;pointer-events:none;z-index:2;">
+      <defs><path id="trackCircle" d="M 30,30 m -20,0 a 20,20 0 1,1 40,0 a 20,20 0 1,1 -40,0"/></defs>
+      <text font-family="Inter,sans-serif" font-size="7.5" font-weight="700" fill="rgba(0,0,0,0.7)" letter-spacing="2.5">
+        <textPath href="#trackCircle" startOffset="6%">TRACK · TRACK · </textPath>
+      </text>
+    </svg>
+    <button class="fab" id="fab-trip" onclick="toggleTrip()">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="8"/></svg>
+    </button>
+  </div>
 </div>
 
 <!-- COCKPIT PAGE -->
@@ -397,6 +418,7 @@
 // ── STATE ─────────────────────────────────────────────────────────────────────
 let myMap, marker, livePath, watchId;
 let speedUnit = localStorage.getItem('speed_unit') || 'kn'; // 'kn' or 'kmh'
+let trackingStartId = 0; // incremented each start to cancel stale timeouts
 let tripActive = false, tripStartTime = null, tripPoints = [];
 let lastSavedPoint = null, trackingReady = false;
 let tripEvents = [];
@@ -542,7 +564,12 @@ function toggleTrip() {
     document.getElementById('live-event-list').innerHTML='';
     document.getElementById('dash-title').innerText='Tracking…';
     toast('Tracking startet in 10 Sek…');
-    setTimeout(()=>{trackingReady=true;toast('Tracking aktiv ✓');},10000);
+    const myStartId = ++trackingStartId;
+    setTimeout(()=>{
+      if(myStartId !== trackingStartId) return; // was cancelled
+      if(!tripActive) return; // stopped before 10s
+      trackingReady=true; toast('Tracking aktiv ✓');
+    },10000);
     updateTimer();
   } else {
     stopTrip();
@@ -558,6 +585,7 @@ function updateTimer() {
 
 function stopTrip() {
   tripActive=false;
+  trackingStartId++; // invalidate any pending 10s toast
   document.getElementById('fab-trip').classList.remove('active');
   document.getElementById('fab-event').style.display='none';
   document.getElementById('live-events').style.display='none';
