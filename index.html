@@ -171,6 +171,27 @@
   .store-row-size { font-family:'Space Mono',monospace; font-size: 11px; color: var(--accent); white-space: nowrap; }
   .btn-del     { background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.4); color: #ef4444; border-radius: 8px; padding: 5px 10px; font-size: 12px; cursor: pointer; white-space: nowrap; }
   .btn-del-gps { background: rgba(245,158,11,0.15); border: 1px solid rgba(245,158,11,0.4); color: #f59e0b; border-radius: 8px; padding: 5px 10px; font-size: 12px; cursor: pointer; white-space: nowrap; }
+
+  /* Station picker */
+  .station-item {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 8px; border-bottom: 1px solid rgba(56,189,248,0.1);
+    cursor: pointer; border-radius: 8px; transition: background 0.15s;
+  }
+  .station-item:active { background: rgba(56,189,248,0.1); }
+  .station-item.active-station { background: rgba(56,189,248,0.12); border-left: 3px solid var(--accent); }
+  .station-name { font-size: 13px; font-weight: 600; }
+  .station-dist { font-family:'Space Mono',monospace; font-size: 11px; color: var(--accent); }
+  .station-river { font-size: 10px; color: var(--text-muted); margin-top: 1px; }
+  #revert-bar {
+    background: rgba(245,158,11,0.15); border: 1px solid rgba(245,158,11,0.3);
+    border-radius: 10px; padding: 8px 12px; margin-bottom: 10px;
+    font-size: 12px; color: #f59e0b; display: none;
+    align-items: center; justify-content: space-between; gap: 8px;
+  }
+  #revert-bar.show { display: flex; }
+  .revert-progress { flex: 1; height: 4px; background: rgba(245,158,11,0.2); border-radius: 2px; overflow: hidden; }
+  .revert-fill { height: 100%; background: #f59e0b; border-radius: 2px; transition: width 1s linear; width: 100%; }
 </style>
 </head>
 <body>
@@ -229,6 +250,14 @@
   <div id="store-trip-list" style="max-height:55vh;overflow-y:auto;"></div>
 
   <button class="btn-secondary" style="margin-top:12px;" onclick="document.getElementById('storage-dialog').close()">Schließen</button>
+</dialog>
+
+<dialog id="station-dialog">
+  <div class="dlg-title" style="color:var(--accent);">Pegelstation wählen</div>
+  <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px;">Auswahl springt nach 30 Sek. automatisch zurück</div>
+  <input type="text" id="station-search" placeholder="Suchen…" oninput="filterStations()" style="margin-bottom:8px;">
+  <div id="station-list" style="max-height:55vh;overflow-y:auto;"></div>
+  <button class="btn-secondary" style="margin-top:10px;" onclick="document.getElementById('station-dialog').close()">Schließen</button>
 </dialog>
 
 <!-- NAV -->
@@ -290,11 +319,32 @@
   </div>
 
   <div class="glass-tile" style="margin-top:12px;">
-    <span class="label">Pegel — Hamburg St. Pauli</span>
-    <div class="val"><span id="pegel-val">---</span><span class="unit">cm</span></div>
-    <div style="display:flex; justify-content:space-between; margin-top:10px; font-size:11px; color:var(--text-muted);">
-      <div id="pegel-hw">HW: Berechne…</div>
-      <div id="pegel-nw">NW: Berechne…</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+      <span class="label" id="pegel-station-label">Pegel — Suche Station…</span>
+      <button onclick="openStationPicker()" style="background:rgba(56,189,248,0.1);border:1px solid var(--tile-border);color:var(--accent);border-radius:8px;padding:3px 10px;font-size:10px;font-weight:600;cursor:pointer;letter-spacing:0.5px;">STATION ▾</button>
+    </div>
+    <div id="revert-bar">
+      <span id="revert-label">Zurück in <b id="revert-count">30</b>s</span>
+      <div class="revert-progress"><div class="revert-fill" id="revert-fill"></div></div>
+      <button onclick="cancelRevert()" style="background:none;border:none;color:#f59e0b;cursor:pointer;font-size:14px;padding:0;">✕</button>
+    </div>
+    <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-top:4px;">
+      <div>
+        <div style="font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:2px;">Aktuell</div>
+        <div class="font-mono" style="font-size:26px;font-weight:700;line-height:1;"><span id="pegel-val">---</span></div>
+        <div style="font-size:10px;color:var(--text-muted);">cm</div>
+      </div>
+      <div>
+        <div style="font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:2px;">Nächstes</div>
+        <div id="pegel-next-type" class="font-mono" style="font-size:16px;font-weight:700;line-height:1;">---</div>
+        <div id="pegel-next-val"  style="font-size:11px;color:var(--text-muted);margin-top:2px;">---</div>
+        <div id="pegel-next-time" style="font-size:10px;color:var(--text-muted);">---</div>
+      </div>
+      <div>
+        <div style="font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:2px;">Tendenz</div>
+        <div id="pegel-trend" style="font-size:26px;line-height:1;">—</div>
+        <div id="pegel-trend-label" style="font-size:10px;color:var(--text-muted);">---</div>
+      </div>
     </div>
   </div>
 
@@ -333,14 +383,17 @@ let tripEvents = [];
 let crewList = JSON.parse(localStorage.getItem('crew_list') || '[]');
 let currentWeather = null;
 
-const STATION = "HAMBURG ST. PAULI";
+let lastEnvUpdate = 0;  // throttle env calls
+let currentStation = null;    // nearest pegel station
+let manualStation = null;     // user-selected override
+let revertTimer = null;       // handle for 30s revert countdown
+let revertInterval = null;    // countdown interval
+let lastGpsLatLng = null;     // stored for revert
 const { jsPDF } = window.jspdf;
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
 window.onload = () => {
-  initMap(); startGps(); fetchPegel(); fetchWeather(); renderLog();
-  setInterval(fetchPegel, 600000);
-  setInterval(fetchWeather, 1800000);
+  initMap(); startGps(); renderLog();
 };
 
 // ── HELPERS ───────────────────────────────────────────────────────────────────
@@ -403,6 +456,7 @@ function startGps() {
     if (!marker) marker = L.marker(ll).addTo(myMap); else marker.setLatLng(ll);
     myMap.panTo(ll);
 
+    updateEnvironment(latitude, longitude);
     if (tripActive && trackingReady) handleSmartTracking(latitude, longitude, speed, heading);
   }, e => {
     document.getElementById('pos-display').innerText = 'GPS-Fehler: ' + e.message;
@@ -545,23 +599,124 @@ function renderCrewTags() {
   c.innerHTML=crewList.map((n,i)=>`<span class="crew-tag">${n}<button onclick="removeCrewMember(${i})">✕</button></span>`).join('');
 }
 
-// ── PEGEL ─────────────────────────────────────────────────────────────────────
-async function fetchPegel() {
-  const url=`https://www.pegelonline.wsv.de/webservices/rest-api/v2/stations/${encodeURIComponent(STATION)}/W/measurements.json?start=P3D`;
+// ── UMWELT — HYBRID PEGEL + WETTER ───────────────────────────────────────────
+const ENV_INTERVAL = 600000; // 10 min throttle
+
+async function updateEnvironment(lat, lng) {
+  lastGpsLatLng = { lat, lng };
+  const now = Date.now();
+  if (now - lastEnvUpdate < ENV_INTERVAL) return;
+  lastEnvUpdate = now;
+  fetchWeather(lat, lng);
+  if (manualStation) {
+    // Manual override active — load that station's data
+    loadStationData(manualStation);
+  } else if (isInGermanWaters(lat, lng)) {
+    fetchClosestPegel(lat, lng);
+  } else {
+    fetchMarineTide(lat, lng);
+  }
+}
+
+function isInGermanWaters(lat, lng) {
+  return lat >= 53.0 && lat <= 56.5 && lng >= 3.0 && lng <= 15.0;
+}
+
+// Find nearest Pegelonline station dynamically by GPS position
+async function fetchClosestPegel(lat, lng) {
   try {
-    const r=await fetch(url); if(!r.ok) throw 0;
-    const data=await r.json(); if(!data.length) return;
-    document.getElementById('pegel-val').innerText=data[data.length-1].value;
-    let lastHW=null,lastNW=null; const win=12;
-    for(let i=data.length-win-1;i>win;i--){
-      const v=data[i].value, sl=data.slice(i-win,i+win+1).map(m=>m.value);
-      if(v===Math.max(...sl)&&!lastHW) lastHW={val:v,time:fmtTide(data[i].timestamp)};
-      if(v===Math.min(...sl)&&!lastNW) lastNW={val:v,time:fmtTide(data[i].timestamp)};
-      if(lastHW&&lastNW) break;
+    // Cache station list for the session
+    if (!window._pegelStations) {
+      const r = await fetch('https://www.pegelonline.wsv.de/webservices/rest-api/v2/stations.json');
+      window._pegelStations = await r.json();
     }
-    if(lastHW) document.getElementById('pegel-hw').innerText=`HW: ${lastHW.val}cm (${lastHW.time})`;
-    if(lastNW) document.getElementById('pegel-nw').innerText=`NW: ${lastNW.val}cm (${lastNW.time})`;
-  } catch(e){ document.getElementById('pegel-val').innerText='N/A'; }
+    const stations = window._pegelStations;
+
+    // Find closest station with coordinates
+    let closest = null, minDist = Infinity;
+    stations.forEach(s => {
+      if (s.latitude && s.longitude) {
+        const d = getDist(lat, lng, s.latitude, s.longitude);
+        if (d < minDist) { minDist = d; closest = s; }
+      }
+    });
+    if (!closest) throw new Error('no station');
+
+    currentStation = closest;
+    document.getElementById('pegel-station-label').innerText =
+      `Pegel — ${closest.longname || closest.shortname} (${(minDist/1000).toFixed(0)} km)`;
+
+    // Fetch 3-day measurements for this station
+    const url = `https://www.pegelonline.wsv.de/webservices/rest-api/v2/stations/${closest.uuid}/W/measurements.json?start=P3D`;
+    const r2 = await fetch(url); if(!r2.ok) throw 0;
+    const data = await r2.json(); if(!data.length) return;
+    renderPegelData(data);
+  } catch(e) {
+    document.getElementById('pegel-val').innerText = 'N/A';
+    document.getElementById('pegel-station-label').innerText = 'Pegel — Fehler';
+  }
+}
+
+// Fallback for international waters: Open-Meteo marine API
+async function fetchMarineTide(lat, lng) {
+  try {
+    document.getElementById('pegel-station-label').innerText = 'Meeresspiegel — Globales Modell';
+    const url = `https://marine-api.open-meteo.com/v1/marine?latitude=${lat}&longitude=${lng}&hourly=sea_level&timezone=auto&forecast_days=1`;
+    const r = await fetch(url); const d = await r.json();
+    const val = d.hourly.sea_level[new Date().getHours()];
+    document.getElementById('pegel-val').innerText = Math.round(val * 100); // m → cm
+    document.getElementById('pegel-trend').innerText = '~';
+    document.getElementById('pegel-trend-label').innerText = 'Modell';
+    document.getElementById('pegel-next-type').innerText = '—';
+    document.getElementById('pegel-next-val').innerText = 'International';
+    document.getElementById('pegel-next-time').innerText = '';
+  } catch(e) {
+    document.getElementById('pegel-val').innerText = 'N/A';
+  }
+}
+
+// Shared renderer for Pegelonline measurement data
+function renderPegelData(data) {
+  const current = data[data.length-1].value;
+  document.getElementById('pegel-val').innerText = current;
+
+  // Tendency from last ~15 min (3 readings at 5 min intervals)
+  const recent = data.slice(-4).map(d=>d.value);
+  const delta = recent[recent.length-1] - recent[0];
+  const trendEl = document.getElementById('pegel-trend');
+  const trendLbl = document.getElementById('pegel-trend-label');
+  if (delta > 3)       { trendEl.innerText='↑'; trendEl.style.color='#34d399'; trendLbl.innerText='Steigend'; }
+  else if (delta < -3) { trendEl.innerText='↓'; trendEl.style.color='#f87171'; trendLbl.innerText='Fallend'; }
+  else                 { trendEl.innerText='→'; trendEl.style.color='#94a3b8'; trendLbl.innerText='Stabil'; }
+
+  // Find last HW and NW peaks in data window
+  const win=12;
+  let peaks=[], troughs=[];
+  for(let i=win; i<data.length-win; i++){
+    const v=data[i].value, sl=data.slice(i-win,i+win+1).map(m=>m.value);
+    if(v===Math.max(...sl)) peaks.push({val:v, ts:new Date(data[i].timestamp).getTime(), time:fmtTide(data[i].timestamp)});
+    else if(v===Math.min(...sl)) troughs.push({val:v, ts:new Date(data[i].timestamp).getTime(), time:fmtTide(data[i].timestamp)});
+  }
+  const lastHW = peaks.length   ? peaks[peaks.length-1]   : null;
+  const lastNW = troughs.length ? troughs[troughs.length-1]: null;
+  const TIDE_HALF = 745/2 * 60000; // ~6h 12min in ms
+
+  let nextType, nextTime;
+  if (lastHW && lastNW) {
+    if (lastHW.ts > lastNW.ts) {
+      nextType='NW'; nextTime=fmtTide(new Date(lastHW.ts+TIDE_HALF).toISOString());
+    } else {
+      nextType='HW'; nextTime=fmtTide(new Date(lastNW.ts+TIDE_HALF).toISOString());
+    }
+  } else if (lastHW) { nextType='NW'; nextTime=fmtTide(new Date(lastHW.ts+TIDE_HALF).toISOString()); }
+  else if (lastNW)   { nextType='HW'; nextTime=fmtTide(new Date(lastNW.ts+TIDE_HALF).toISOString()); }
+  else               { nextType='—'; nextTime=''; }
+
+  const nextColor = nextType==='HW' ? '#38bdf8' : '#818cf8';
+  document.getElementById('pegel-next-type').innerText   = nextType;
+  document.getElementById('pegel-next-type').style.color  = nextColor;
+  document.getElementById('pegel-next-val').innerText    = nextType==='HW' ? (lastHW?lastHW.val+'cm':'~') : (lastNW?lastNW.val+'cm':'~');
+  document.getElementById('pegel-next-time').innerText   = 'ca. '+nextTime;
 }
 
 function fmtTide(ts){
@@ -570,11 +725,12 @@ function fmtTide(ts){
 }
 
 // ── WETTER ────────────────────────────────────────────────────────────────────
-async function fetchWeather() {
+async function fetchWeather(lat, lng) {
   try {
-    const url='https://api.open-meteo.com/v1/forecast?latitude=53.55&longitude=9.99&current=temperature_2m,windspeed_10m,winddirection_10m,weathercode&wind_speed_unit=kn';
-    const r=await fetch(url); const d=await r.json(); const c=d.current;
-    currentWeather={temp:c.temperature_2m,wind:c.windspeed_10m.toFixed(1),windDir:c.winddirection_10m,desc:wxCode(c.weathercode),ts:Date.now()};
+    // Use actual GPS position instead of hardcoded Hamburg coords
+    const url=`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,windspeed_10m,winddirection_10m,weathercode&wind_speed_unit=kn`;
+    const r=await fetch(url); const d=await r.json(); const cc=d.current;
+    currentWeather={temp:cc.temperature_2m,wind:cc.windspeed_10m.toFixed(1),windDir:cc.winddirection_10m,desc:wxCode(cc.weathercode),ts:Date.now()};
   } catch(e){}
 }
 
@@ -683,50 +839,106 @@ async function exportTripPDF(idx) {
       const lats=pts.map(p=>p.lat), lngs=pts.map(p=>p.lng);
       const minLat=Math.min(...lats), maxLat=Math.max(...lats);
       const minLng=Math.min(...lngs), maxLng=Math.max(...lngs);
-      const mW=W-M*2, mH=65, pad=6;
-      doc.setFillColor(10,20,40); doc.setDrawColor(56,189,248);
-      doc.roundedRect(M,y,mW,mH,2,2,'FD');
-      const ranLat=maxLat-minLat||0.001, ranLng=maxLng-minLng||0.001;
+      const centerLat=(minLat+maxLat)/2, centerLng=(minLng+maxLng)/2;
+
+      // Fetch OpenSeaMap static tile as background
+      const mW=W-M*2, mH=75, pad=6;
+
+      // Determine zoom from bounding box
+      const spanLat=maxLat-minLat||0.002, spanLng=maxLng-minLng||0.002;
+      const span=Math.max(spanLat,spanLng);
+      let zoom=16;
+      if(span>0.5) zoom=11; else if(span>0.2) zoom=12;
+      else if(span>0.08) zoom=13; else if(span>0.03) zoom=14;
+      else if(span>0.01) zoom=15;
+
+      // Build OpenStreetMap static URL (512px tiles)
+      // We draw the tile as background then overlay our path
+      const tileW=512, tileH=512;
+      const osmUrl=`https://staticmap.openstreetmap.de/staticmap.php?center=${centerLat},${centerLng}&zoom=${zoom}&size=${tileW}x${tileH}&maptype=osm-mapnik`;
+
+      // Draw map background as image with await
+      try {
+        const imgData = await new Promise((res,rej)=>{
+          const img=new Image(); img.crossOrigin='anonymous';
+          img.onload=()=>{ const cv=document.createElement('canvas'); cv.width=tileW; cv.height=tileH;
+            cv.getContext('2d').drawImage(img,0,0); res(cv.toDataURL('image/jpeg',0.85)); };
+          img.onerror=()=>rej(new Error('map tile failed'));
+          img.src=osmUrl;
+        });
+        doc.addImage(imgData,'JPEG',M,y,mW,mH);
+      } catch(e) {
+        // Fallback: dark background if tile fails
+        doc.setFillColor(10,20,40); doc.rect(M,y,mW,mH,'F');
+      }
+
+      doc.setDrawColor(56,189,248); doc.setLineWidth(0.6);
+      doc.roundedRect(M,y,mW,mH,2,2,'S');
+
+      // Scale GPS points onto the map box
+      const ranLat=maxLat-minLat||0.002, ranLng=maxLng-minLng||0.002;
+      // Add padding factor matching tile rendering
       const sc=Math.min((mW-pad*2)/ranLng,(mH-pad*2)/ranLat);
       const ox=M+pad+(mW-pad*2-ranLng*sc)/2;
       const oy=y+pad+(mH-pad*2-ranLat*sc)/2;
       const tx=lng=>ox+(lng-minLng)*sc;
       const ty=la=>oy+(maxLat-la)*sc;
 
-      doc.setDrawColor(56,189,248); doc.setLineWidth(0.7);
+      // Draw track with thick white shadow then blue line
+      doc.setDrawColor(255,255,255); doc.setLineWidth(1.8);
+      for(let i=1;i<pts.length;i++)
+        doc.line(tx(pts[i-1].lng),ty(pts[i-1].lat),tx(pts[i].lng),ty(pts[i].lat));
+      doc.setDrawColor(0,120,220); doc.setLineWidth(0.9);
       for(let i=1;i<pts.length;i++)
         doc.line(tx(pts[i-1].lng),ty(pts[i-1].lat),tx(pts[i].lng),ty(pts[i].lat));
 
       // Start / end dots
-      doc.setFillColor(52,211,153); doc.circle(tx(pts[0].lng),ty(pts[0].lat),1.8,'F');
-      doc.setFillColor(239,68,68);  doc.circle(tx(pts[pts.length-1].lng),ty(pts[pts.length-1].lat),1.8,'F');
+      doc.setFillColor(52,211,153); doc.setDrawColor(255,255,255); doc.setLineWidth(0.4);
+      doc.circle(tx(pts[0].lng),ty(pts[0].lat),2.2,'FD');
+      doc.setFillColor(239,68,68);
+      doc.circle(tx(pts[pts.length-1].lng),ty(pts[pts.length-1].lat),2.2,'FD');
 
       // Event dots
       if(trip.events) trip.events.forEach(ev=>{
-        if(ev.lat){ doc.setFillColor(248,199,56); doc.circle(tx(ev.lng),ty(ev.lat),1.4,'F'); }
+        if(ev.lat){ doc.setFillColor(248,199,56); doc.circle(tx(ev.lng),ty(ev.lat),1.6,'F'); }
       });
 
-      // Legend
-      doc.setFontSize(7);
-      doc.setTextColor(52,211,153);  doc.text('● Start',M+2,y+mH-2);
-      doc.setTextColor(239,68,68);   doc.text('● Ende', M+16,y+mH-2);
-      if(trip.events&&trip.events.length){doc.setTextColor(248,199,56);doc.text('● Ereignis',M+30,y+mH-2);}
+      // Legend — plain text, no bullet char to avoid encoding issues
+      doc.setFontSize(7); doc.setLineWidth(0);
+      doc.setFillColor(52,211,153);  doc.circle(M+4,  y+mH-3,1.5,'F'); doc.setTextColor(40,40,40); doc.text('Start',   M+7,  y+mH-1);
+      doc.setFillColor(239,68,68);   doc.circle(M+24, y+mH-3,1.5,'F'); doc.text('Ende',    M+27, y+mH-1);
+      if(trip.events&&trip.events.length){ doc.setFillColor(248,199,56); doc.circle(M+44,y+mH-3,1.5,'F'); doc.text('Ereignis',M+47,y+mH-1); }
       y+=mH+8;
     }
 
-    // Wegpunkte
+    // Wegpunkte — max 8 representative points
     doc.setTextColor(56,189,248); doc.setFont('helvetica','bold'); doc.setFontSize(10);
-    doc.text('WEGPUNKTE (Auswahl)',M,y); y+=6;
-    doc.setFont('courier','normal'); doc.setFontSize(7.5); doc.setTextColor(210,230,250);
+    doc.text('WEGPUNKTE',M,y); y+=6;
 
     const pts=trip.points||[];
-    const step=Math.max(1,Math.floor(pts.length/15));
-    for(let i=0;i<pts.length;i+=step){
-      const p=pts[i];
-      const lt=toDDM(p.lat,true), lg=toDDM(p.lng,false);
-      const spd=p.speed?(p.speed*1.94384).toFixed(1)+' kn':'—';
-      if(y>272){doc.addPage();y=20;doc.setFillColor(2,6,23);doc.rect(0,0,W,10,'F');}
-      doc.text(`${fmtTime(p.ts)}   ${lt.ddm}   ${lg.ddm}   ${spd}`,M,y); y+=5;
+    if(pts.length>0){
+      // Table header
+      doc.setFillColor(220,235,255); doc.rect(M,y-4,W-M*2,7,'F');
+      doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(0,60,140);
+      doc.text('Zeit',M+2,y); doc.text('Breite',M+22,y); doc.text('Laenge',M+74,y); doc.text('SOG',M+128,y);
+      y+=7;
+      // Select max 8 evenly spaced points
+      const maxPts=8, step2=Math.max(1,Math.floor(pts.length/maxPts));
+      const shown=[pts[0]];
+      for(let i=step2;i<pts.length-1;i+=step2) shown.push(pts[i]);
+      if(pts.length>1) shown.push(pts[pts.length-1]);
+      shown.forEach((p,pi)=>{
+        if(y>272){doc.addPage();y=20;}
+        const lt=toDDM(p.lat,true), lg=toDDM(p.lng,false);
+        const spd=p.speed?(p.speed*1.94384).toFixed(1)+' kn':'—';
+        doc.setFillColor(pi%2===0?245:255, pi%2===0?250:255, 255);
+        doc.rect(M,y-4,W-M*2,7,'F');
+        doc.setFont('courier','normal'); doc.setFontSize(8); doc.setTextColor(20,50,100);
+        doc.text(fmtTime(p.ts),M+2,y); doc.text(lt.ddm,M+22,y);
+        doc.text(lg.ddm,M+74,y); doc.text(spd,M+128,y);
+        y+=7;
+      });
+      y+=3;
     }
 
     // Ereignisse
@@ -734,15 +946,15 @@ async function exportTripPDF(idx) {
       y+=4; if(y>258){doc.addPage();y=20;}
       doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(56,189,248);
       doc.text('EREIGNISSE',M,y); y+=6;
-      trip.events.forEach(ev=>{
+      trip.events.forEach((ev,ei)=>{
         if(y>274){doc.addPage();y=20;}
-        doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(241,245,249);
-        const evHead=`${fmtTime(ev.ts)}`;
-        doc.text(evHead,M,y);
-        doc.setFont('helvetica','normal'); doc.setTextColor(210,230,250);
-        const lines=doc.splitTextToSize(`${ev.icon} ${ev.text}`,W-M*2-22);
-        doc.text(lines,M+22,y);
-        y+=5*lines.length+2;
+        doc.setFillColor(ei%2===0?240:250,248,255); doc.rect(M,y-4,W-M*2,12,'F');
+        doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(0,60,140);
+        doc.text(fmtTime(ev.ts),M+2,y);
+        doc.setFont('helvetica','normal'); doc.setTextColor(20,50,100);
+        const lines=doc.splitTextToSize(ev.text,W-M*2-26);
+        doc.text(lines,M+26,y);
+        y+=Math.max(12,5*lines.length+4);
       });
     }
 
@@ -763,6 +975,127 @@ async function exportTripPDF(idx) {
   } finally {
     document.getElementById('pdf-overlay').classList.remove('show');
   }
+}
+
+// ── STATION PICKER ───────────────────────────────────────────────────────────
+async function openStationPicker() {
+  // Ensure station list is loaded
+  if (!window._pegelStations) {
+    toast('Lade Stationsliste…');
+    const r = await fetch('https://www.pegelonline.wsv.de/webservices/rest-api/v2/stations.json');
+    window._pegelStations = await r.json();
+  }
+  document.getElementById('station-search').value = '';
+  renderStationList(window._pegelStations);
+  document.getElementById('station-dialog').showModal();
+}
+
+function filterStations() {
+  const q = document.getElementById('station-search').value.toLowerCase();
+  const filtered = (window._pegelStations || []).filter(s =>
+    (s.longname||s.shortname||'').toLowerCase().includes(q) ||
+    (s.water?.longname||'').toLowerCase().includes(q)
+  );
+  renderStationList(filtered.slice(0, 50)); // cap at 50 for performance
+}
+
+function renderStationList(stations) {
+  const ref = lastGpsLatLng || { lat: 53.55, lng: 9.99 };
+  // Sort by distance from current GPS
+  const sorted = stations
+    .filter(s => s.latitude && s.longitude)
+    .map(s => ({ ...s, _dist: getDist(ref.lat, ref.lng, s.latitude, s.longitude) }))
+    .sort((a,b) => a._dist - b._dist);
+
+  const activeId = (manualStation || currentStation)?.uuid;
+  document.getElementById('station-list').innerHTML = sorted.slice(0, 80).map(s => `
+    <div class="station-item ${s.uuid===activeId?'active-station':''}" onclick="selectStation('${s.uuid}')">
+      <div>
+        <div class="station-name">${s.longname || s.shortname}</div>
+        <div class="station-river">${s.water?.longname || ''}</div>
+      </div>
+      <div class="station-dist">${s._dist < 1000 ? Math.round(s._dist)+'m' : (s._dist/1000).toFixed(0)+'km'}</div>
+    </div>`).join('');
+}
+
+function selectStation(uuid) {
+  const station = (window._pegelStations||[]).find(s => s.uuid === uuid);
+  if (!station) return;
+  manualStation = station;
+  document.getElementById('station-dialog').close();
+
+  // Show revert bar
+  startRevertCountdown();
+
+  // Load data immediately
+  loadStationData(station);
+  lastEnvUpdate = Date.now(); // reset throttle so it takes effect
+  toast(`Station: ${station.longname || station.shortname}`);
+}
+
+async function loadStationData(station) {
+  try {
+    const dist = lastGpsLatLng
+      ? getDist(lastGpsLatLng.lat, lastGpsLatLng.lng, station.latitude, station.longitude)
+      : null;
+    const distStr = dist !== null ? ` (${dist < 1000 ? Math.round(dist)+'m' : (dist/1000).toFixed(0)+'km'})` : '';
+    const manualTag = manualStation ? ' ✎' : '';
+    document.getElementById('pegel-station-label').innerText =
+      `Pegel — ${station.longname || station.shortname}${distStr}${manualTag}`;
+
+    const url = `https://www.pegelonline.wsv.de/webservices/rest-api/v2/stations/${station.uuid}/W/measurements.json?start=P3D`;
+    const r = await fetch(url); if(!r.ok) throw 0;
+    const data = await r.json(); if(!data.length) return;
+    renderPegelData(data);
+  } catch(e) {
+    document.getElementById('pegel-val').innerText = 'N/A';
+  }
+}
+
+function startRevertCountdown() {
+  clearRevertTimers();
+  let remaining = 30;
+  document.getElementById('revert-count').innerText = remaining;
+  document.getElementById('revert-fill').style.width = '100%';
+  document.getElementById('revert-bar').classList.add('show');
+
+  // Shrink bar over 30s
+  requestAnimationFrame(() => {
+    document.getElementById('revert-fill').style.width = '0%';
+  });
+
+  revertInterval = setInterval(() => {
+    remaining--;
+    document.getElementById('revert-count').innerText = remaining;
+    if (remaining <= 0) revertToNearest();
+  }, 1000);
+
+  revertTimer = setTimeout(revertToNearest, 30000);
+}
+
+function revertToNearest() {
+  clearRevertTimers();
+  manualStation = null;
+  document.getElementById('revert-bar').classList.remove('show');
+  // Force re-fetch nearest
+  lastEnvUpdate = 0;
+  if (lastGpsLatLng) {
+    updateEnvironment(lastGpsLatLng.lat, lastGpsLatLng.lng);
+  }
+  toast('Zurück zur nächsten Station');
+}
+
+function cancelRevert() {
+  clearRevertTimers();
+  manualStation = null;
+  document.getElementById('revert-bar').classList.remove('show');
+  lastEnvUpdate = 0;
+  if (lastGpsLatLng) updateEnvironment(lastGpsLatLng.lat, lastGpsLatLng.lng);
+}
+
+function clearRevertTimers() {
+  if (revertTimer)   { clearTimeout(revertTimer);   revertTimer = null; }
+  if (revertInterval){ clearInterval(revertInterval); revertInterval = null; }
 }
 
 // ── SPEICHERVERWALTUNG ───────────────────────────────────────────────────────
