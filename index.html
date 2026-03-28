@@ -1358,7 +1358,11 @@ function renderPegelData(data, showTides) {
   const globalRange= globalMax - globalMin;
   const dynThr     = Math.min(15, Math.max(3, globalRange * 0.02));
 
-  // ── Trend-Erkennung mit Hysterese ────────────────────────────────────────
+  // ── Maritime 3-Stufen-Trend: Flut · Kentert · Ebbe ──────────────────────
+  // Keine "Stabil"-Anzeige mehr — entspricht maritimer Praxis.
+  // Kentert = Stauwasser: kurze Ruhephase um HW/NW, vom Modell bestimmt.
+  // Flut / Ebbe = Messdaten entscheiden (Hysterese via dynThr).
+
   const last3s   = tail8.slice(-3);
   const isPeak   = last3s[1] >= last3s[0] && last3s[1] >= last3s[2];
   const isTrough = last3s[1] <= last3s[0] && last3s[1] <= last3s[2];
@@ -1368,19 +1372,38 @@ function renderPegelData(data, showTides) {
   const nearTurn   = (wasRising || wasFalling) && nowSlowing;
   const atTurning  = showTides && (isPeak || isTrough || nearTurn);
 
-  if (atTurning) {
-    trendEl.innerText='↔'; trendEl.style.color='#f59e0b'; trendLbl.innerText='Kentert';
-  } else if (shortDelta >  dynThr) {
-    trendEl.innerText='↑'; trendEl.style.color='#34d399'; trendLbl.innerText='Steigend';
-  } else if (shortDelta < -dynThr) {
-    trendEl.innerText='↓'; trendEl.style.color='#f87171'; trendLbl.innerText='Fallend';
-  } else if (longDelta >  dynThr * 2) {
-    trendEl.innerText='↑'; trendEl.style.color='#34d399'; trendLbl.innerText='Steigend';
-  } else if (longDelta < -dynThr * 2) {
-    trendEl.innerText='↓'; trendEl.style.color='#f87171'; trendLbl.innerText='Fallend';
+  // Modell: Totzone ±15min → Kentert erzwingen
+  const modelNextEx = showTides && _tidalModel.amplitude !== null
+    ? _nextExtremum(Date.now()) : null;
+  const inModelTotzone = modelNextEx
+    && Math.abs(modelNextEx.ts - Date.now()) < 15 * 60000;
+
+  // Entscheidungsbaum (Single Source of Truth)
+  let trendSym, trendColor, trendTxt;
+
+  if (showTides && (atTurning || inModelTotzone)) {
+    // Kentert: Stauwasser — Modell oder Sensor erkennen Ruhephase
+    trendSym = '↔'; trendColor = '#f59e0b'; trendTxt = 'Kentert';
+  } else if (longDelta > dynThr || shortDelta > dynThr) {
+    // Flut: Pegel steigt messbar
+    trendSym = '↑'; trendColor = '#34d399'; trendTxt = 'Flut';
+  } else if (longDelta < -dynThr || shortDelta < -dynThr) {
+    // Ebbe: Pegel fällt messbar
+    trendSym = '↓'; trendColor = '#f87171'; trendTxt = 'Ebbe';
+  } else if (showTides) {
+    // Grauzone bei Gezeiten: noch kein klares Signal → Kentert
+    // (besser als falsches Flut/Ebbe in der Beschleunigungsphase)
+    trendSym = '↔'; trendColor = '#f59e0b'; trendTxt = 'Kentert';
   } else {
-    trendEl.innerText='→'; trendEl.style.color='#94a3b8'; trendLbl.innerText='Stabil';
+    // Binnengewässer ohne Tidenhub: nur Richtung zeigen
+    trendSym = longDelta >= 0 ? '↑' : '↓';
+    trendColor = longDelta >= 0 ? '#34d399' : '#f87171';
+    trendTxt  = longDelta >= 0 ? 'Steigend' : 'Fallend';
   }
+
+  trendEl.innerText      = trendSym;
+  trendEl.style.color    = trendColor;
+  trendLbl.innerText     = trendTxt;
 
   // ── Inland / kein Tidenhub ────────────────────────────────────────────────
   const nextTypeEl = document.getElementById('pegel-next-type');
