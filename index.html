@@ -941,15 +941,24 @@ function renderPegelData(data) {
   const lastNW = troughs.length ? troughs[troughs.length-1]: null;
   const TIDE_HALF = 745/2 * 60000; // ~6h 12min in ms
 
+  // Helper: advance estimated tide time by full cycles until it's in the future
+  function nextFutureTide(baseTsMs) {
+    const FULL_CYCLE = 745 * 60000; // ~12h 25min
+    let t = baseTsMs + TIDE_HALF;
+    const now = Date.now();
+    while (t < now) t += FULL_CYCLE;
+    return t;
+  }
+
   let nextType, nextTime;
   if (lastHW && lastNW) {
     if (lastHW.ts > lastNW.ts) {
-      nextType='NW'; nextTime=fmtTide(new Date(lastHW.ts+TIDE_HALF).toISOString());
+      nextType='NW'; nextTime=fmtTide(new Date(nextFutureTide(lastHW.ts)).toISOString());
     } else {
-      nextType='HW'; nextTime=fmtTide(new Date(lastNW.ts+TIDE_HALF).toISOString());
+      nextType='HW'; nextTime=fmtTide(new Date(nextFutureTide(lastNW.ts)).toISOString());
     }
-  } else if (lastHW) { nextType='NW'; nextTime=fmtTide(new Date(lastHW.ts+TIDE_HALF).toISOString()); }
-  else if (lastNW)   { nextType='HW'; nextTime=fmtTide(new Date(lastNW.ts+TIDE_HALF).toISOString()); }
+  } else if (lastHW) { nextType='NW'; nextTime=fmtTide(new Date(nextFutureTide(lastHW.ts)).toISOString()); }
+  else if (lastNW)   { nextType='HW'; nextTime=fmtTide(new Date(nextFutureTide(lastNW.ts)).toISOString()); }
   else               { nextType='—'; nextTime=''; }
 
   const nextColor = nextType==='HW' ? '#38bdf8' : '#818cf8';
