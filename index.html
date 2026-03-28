@@ -1057,10 +1057,127 @@ async function fetchMarineTide(lat, lng) {
   }
 }
 
-// Shared renderer for Pegelonline/eHYD measurement data
-// showTides: true = show HW/NW prediction, false = inland water (no tides)
+// ── PEGEL RENDERER — Hybrides Harmonisches Modell ──────────────────────────────
+//
+// Architektur:
+//   1. Peak-Finder identifiziert letzte HW/NW aus Messdaten
+//   2. Harmonisches Modell (vereinfachte M2-Sinussumme) berechnet Soll-Kurve
+//   3. Kalibrierung: Phasenverschiebung + Amplituden-Skalierung aus Echtdaten
+//   4. Modell liefert nächste HW/NW — stabil am Kenterpunkt
+//   5. Adaptive Periode: lernt aus gemessenen HW/NW-Abständen (M2 ≈ 12.42h)
+//   6. Globale Anpassung: erkennt diurnale Gezeiten (24h-Periode)
+
+const _tidalModel = {
+  // Kalibrierungsparameter — werden aus Echtzeitdaten gelernt
+  period:    12.42 * 3600000,  // M2-Basis in ms (12h 25min)
+  phase:     0,                // Phasenoffset in ms (aus letztem HW gelernt)
+  amplitude: null,             // Amplitude in cm (aus globalMax/Min gelernt)
+  meanLevel: null,             // Mittlerer Wasserstand in cm
+  phaseOffset: 0,              // Windstau-Korrektur (beobachtet vs. Modell)
+  diurnal:   false,            // true = 24h-Periode (einige Küsten Australiens)
+  lastCalib:  0,               // Zeitstempel der letzten Kalibrierung
+};
+
+// Gleitender Durchschnitt
+function _movAvg(arr, n) {
+  const slice = arr.slice(-Math.min(n, arr.length));
+  return slice.reduce((a, b) => a + b, 0) / slice.length;
+}
+
+// Harmonisches Modell: gibt Wasserstand zum Zeitpunkt ts zurück
+function _harmonicLevel(ts) {
+  const m = _tidalModel;
+  if (m.amplitude === null) return null;
+  const T = m.diurnal ? m.period * 2 : m.period; // diurnal = doppelte Periode
+  const phase = ((ts - m.phase - m.phaseOffset) / T) * 2 * Math.PI;
+  return m.meanLevel + m.amplitude * Math.cos(phase);
+}
+
+// Nächsten Extrempunkt des harmonischen Modells finden
+function _nextExtremum(afterTs) {
+  const m = _tidalModel;
+  const T = m.diurnal ? m.period * 2 : m.period;
+  const HALF = T / 2;
+  // Finde Phase des letzten HW (Kosinus-Maximum bei phase=0)
+  const phasedTs = afterTs - m.phase - m.phaseOffset;
+  const cyclesSinceRef = phasedTs / T;
+  const lastPeakTs = m.phase + m.phaseOffset + Math.floor(cyclesSinceRef) * T;
+  const lastTroughTs = lastPeakTs + HALF;
+
+  // Sammle alle Extrema in nächsten 2 Zyklen
+  const candidates = [];
+  for (let k = -1; k <= 3; k++) {
+    const hw = lastPeakTs + k * T;
+    const nw = lastTroughTs + k * T;
+    if (hw > afterTs)  candidates.push({ type: 'HW', ts: hw,  val: m.meanLevel + m.amplitude });
+    if (nw > afterTs)  candidates.push({ type: 'NW', ts: nw,  val: m.meanLevel - m.amplitude });
+  }
+  candidates.sort((a, b) => a.ts - b.ts);
+  return candidates[0] || null;
+}
+
+// Modell kalibrieren — mit Confidence-Sperre am Kenterpunkt
+function _calibrateModel(peaks, troughs, globalMax, globalMin) {
+  const m = _tidalModel;
+  const now = Date.now();
+  if (now - m.lastCalib < 300000) return; // max alle 5 min
+
+  // ── 1. Confidence-Sperre: kein Update innerhalb ±20min eines Extremums ────
+  // Kurz vor/nach dem Peak sind Messwerte am unruhigsten — Modell starr halten
+  const FREEZE_MS = 20 * 60000; // 20 Minuten in ms
+  if (m.amplitude !== null) {
+    const nextEx = _nextExtremum(now);
+    const prevEx = _nextExtremum(now - m.period * 0.6); // vorheriger Extrempunkt
+    const nearNext = nextEx && Math.abs(nextEx.ts - now) < FREEZE_MS;
+    const nearPrev = Math.abs((prevEx ? prevEx.ts + (m.diurnal ? m.period*2 : m.period)/2 : 0) - now) < FREEZE_MS;
+    if (nearNext) return; // Eingefroren — Modell führt durch den Peak
+  }
+  m.lastCalib = now;
+
+  // ── 2. Amplituden-Skalierung aus 72h-Daten (Punkt 4: dynamisch) ─────────
+  m.amplitude = (globalMax - globalMin) / 2;
+  m.meanLevel = (globalMax + globalMin) / 2;
+
+  // ── 3. Adaptive Periode mit EMA α=0.3 (Punkt 2 + 3) ─────────────────────
+  if (peaks.length >= 2) {
+    const intervals = [];
+    for (let i = 1; i < peaks.length; i++)
+      intervals.push(peaks[i].ts - peaks[i-1].ts);
+    const avgInterval = intervals.reduce((a,b) => a+b, 0) / intervals.length;
+
+    if (avgInterval > 10*3600000 && avgInterval < 27*3600000) {
+      m.period = m.period * 0.7 + avgInterval * 0.3; // EMA α=0.3
+    }
+    // Diurnal: > 20h → 24h-Basis; sonst M2 (12.42h)
+    if (m.period > 20*3600000) {
+      m.diurnal = true;
+      m.period  = m.period * 0.7 + 24*3600000 * 0.3; // snap toward 24h
+    } else {
+      m.diurnal = false;
+      // Sanfter Pull back to M2 if drifting
+      if (m.period < 11*3600000 || m.period > 14*3600000)
+        m.period = m.period * 0.7 + 12.42*3600000 * 0.3;
+    }
+  }
+
+  // ── 4. Phase + phaseOffset mit EMA α=0.3 ─────────────────────────────────
+  const lastHW = peaks.length ? peaks[peaks.length-1] : null;
+  if (lastHW) {
+    m.phase = lastHW.ts; // Referenz-HW
+
+    if (peaks.length >= 2) {
+      const prevHW = peaks[peaks.length-2];
+      const midTs  = prevHW.ts + (lastHW.ts - prevHW.ts) / 2;
+      const measNW = troughs.length ? troughs[troughs.length-1] : null;
+      if (measNW && Math.abs(measNW.ts - midTs) < 2*3600000) {
+        const drift = measNW.ts - midTs;
+        m.phaseOffset = m.phaseOffset * 0.7 + drift * 0.3; // EMA α=0.3
+      }
+    }
+  }
+}
+
 function renderPegelData(data, showTides) {
-  // Default: check GPS position if not explicitly passed
   if (showTides === undefined) {
     const pos = lastGpsLatLng;
     showTides = pos ? isTidalWater(pos.lat, pos.lng) : false;
@@ -1072,133 +1189,174 @@ function renderPegelData(data, showTides) {
   const trendEl = document.getElementById('pegel-trend');
   const trendLbl = document.getElementById('pegel-trend-label');
 
-  // Trend detection from last 8 readings (~40 min)
-  const tail = data.slice(-8).map(d => d.value);
-  const shortDelta = tail[tail.length-1] - (tail[tail.length-4] ?? tail[0]);
-  const longDelta  = tail[tail.length-1] - tail[0];
-  const wasRising  = longDelta > 8, wasFalling = longDelta < -8;
-  const nowSlowing = Math.abs(shortDelta) < 4;
-  const nearTurn   = (wasRising || wasFalling) && nowSlowing;
-  const last3 = tail.slice(-3);
-  const isPeak   = last3[1] >= last3[0] && last3[1] >= last3[2];
-  const isTrough = last3[1] <= last3[0] && last3[1] <= last3[2];
+  // ── Smoothing: gleitender 3-Punkt-Durchschnitt ───────────────────────────
+  const raw = data.map(d => d.value);
+  const smoothed = raw.map((_, i) => _movAvg(raw.slice(0, i+1), 3));
 
-  if (showTides && (isPeak || isTrough || nearTurn)) {
+  const tail8  = smoothed.slice(-8);
+  const tail12 = smoothed.slice(-12);
+  const tail24 = smoothed.slice(-24);
+
+  const shortDelta = tail8[-1+tail8.length]   - tail8[Math.max(0, tail8.length-4)];
+  const longDelta  = tail8[tail8.length-1]    - tail8[0];
+  const prevDelta  = tail12[tail12.length-1]  - tail12[0];
+  const hourDelta  = tail24[tail24.length-1]  - tail24[0];
+
+  // ── Dynamischer Schwellenwert (2% des Tidenhubs) ─────────────────────────
+  const allVals    = raw;
+  const globalMax  = Math.max(...allVals);
+  const globalMin  = Math.min(...allVals);
+  const globalRange= globalMax - globalMin;
+  const dynThr     = Math.min(15, Math.max(3, globalRange * 0.02));
+
+  // ── Trend-Erkennung mit Hysterese ────────────────────────────────────────
+  const last3s   = tail8.slice(-3);
+  const isPeak   = last3s[1] >= last3s[0] && last3s[1] >= last3s[2];
+  const isTrough = last3s[1] <= last3s[0] && last3s[1] <= last3s[2];
+  const wasRising  = longDelta >  dynThr * 2;
+  const wasFalling = longDelta < -dynThr * 2;
+  const nowSlowing = Math.abs(shortDelta) < dynThr;
+  const nearTurn   = (wasRising || wasFalling) && nowSlowing;
+  const atTurning  = showTides && (isPeak || isTrough || nearTurn);
+
+  if (atTurning) {
     trendEl.innerText='↔'; trendEl.style.color='#f59e0b'; trendLbl.innerText='Kentert';
-  } else if (shortDelta > 4) {
+  } else if (shortDelta >  dynThr) {
     trendEl.innerText='↑'; trendEl.style.color='#34d399'; trendLbl.innerText='Steigend';
-  } else if (shortDelta < -4) {
+  } else if (shortDelta < -dynThr) {
     trendEl.innerText='↓'; trendEl.style.color='#f87171'; trendLbl.innerText='Fallend';
-  } else if (longDelta > 8) {
+  } else if (longDelta >  dynThr * 2) {
     trendEl.innerText='↑'; trendEl.style.color='#34d399'; trendLbl.innerText='Steigend';
-  } else if (longDelta < -8) {
+  } else if (longDelta < -dynThr * 2) {
     trendEl.innerText='↓'; trendEl.style.color='#f87171'; trendLbl.innerText='Fallend';
   } else {
     trendEl.innerText='→'; trendEl.style.color='#94a3b8'; trendLbl.innerText='Stabil';
   }
 
-  // ── HW/NW only for tidal waters ──────────────────────────────────────────
-  const nextTypeEl  = document.getElementById('pegel-next-type');
-  const nextValEl   = document.getElementById('pegel-next-val');
-  const nextTimeEl  = document.getElementById('pegel-next-time');
-  const nextLblEl   = document.querySelector('[style*="Nächstes"]') ||
-                      nextTypeEl.previousElementSibling;
+  // ── Inland / kein Tidenhub ────────────────────────────────────────────────
+  const nextTypeEl = document.getElementById('pegel-next-type');
+  const nextValEl  = document.getElementById('pegel-next-val');
+  const nextTimeEl = document.getElementById('pegel-next-time');
 
   if (!showTides) {
-    // Inland / non-tidal: hide HW/NW column, show water level context instead
-    nextTypeEl.innerText  = '~';
-    nextTypeEl.style.color = '#94a3b8';
-    nextValEl.innerText   = 'Kein Tidenhub';
-    nextTimeEl.innerText  = 'Binnengewässer';
+    nextTypeEl.innerText = '~'; nextTypeEl.style.color = '#94a3b8';
+    nextValEl.innerText  = 'Kein Tidenhub';
+    nextTimeEl.innerText = 'Binnengewässer';
+    return;
+  }
+  if (globalRange < 30) {
+    nextTypeEl.innerText = '~'; nextTypeEl.style.color = '#94a3b8';
+    nextValEl.innerText  = 'Geringer Hub';
+    nextTimeEl.innerText = `Δ ${Math.round(globalRange)} cm`;
     return;
   }
 
-  // Tidal: find peaks and troughs
-  const win=12;
-  let peaks=[], troughs=[];
-  for(let i=win; i<data.length-win; i++){
-    const v=data[i].value, sl=data.slice(i-win,i+win+1).map(m=>m.value);
-    if(v===Math.max(...sl)) peaks.push({val:v, ts:new Date(data[i].timestamp).getTime()});
-    else if(v===Math.min(...sl)) troughs.push({val:v, ts:new Date(data[i].timestamp).getTime()});
+  // ── Peak-Finder auf geglätteter Kurve ────────────────────────────────────
+  const win = 12;
+  let peaks = [], troughs = [];
+  for (let i = win; i < smoothed.length - win; i++) {
+    const v  = smoothed[i];
+    const sl = smoothed.slice(i - win, i + win + 1);
+    if (v === Math.max(...sl)) peaks.push({ val: raw[i], ts: new Date(data[i].timestamp).getTime() });
+    else if (v === Math.min(...sl)) troughs.push({ val: raw[i], ts: new Date(data[i].timestamp).getTime() });
   }
 
-  // Validate tidal range — if HW-NW < 30cm it's probably not tidal
-  const hwVal = peaks.length   ? peaks[peaks.length-1].val   : null;
-  const nwVal = troughs.length ? troughs[troughs.length-1].val: null;
-  if (hwVal !== null && nwVal !== null && (hwVal - nwVal) < 30) {
-    nextTypeEl.innerText  = '~';
-    nextTypeEl.style.color = '#94a3b8';
-    nextValEl.innerText   = 'Geringer Hub';
-    nextTimeEl.innerText  = `Δ ${hwVal - nwVal} cm`;
-    return;
-  }
-
+  const hwVal  = peaks.length   ? Math.max(...peaks.map(p => p.val))   : globalMax;
+  const nwVal  = troughs.length ? Math.min(...troughs.map(p => p.val)) : globalMin;
   const lastHW = peaks.length   ? peaks[peaks.length-1]   : null;
-  const lastNW = troughs.length ? troughs[troughs.length-1]: null;
-  const TIDE_HALF = 745/2 * 60000;
+  const lastNW = troughs.length ? troughs[troughs.length-1] : null;
 
-  function nextFutureTide(baseTsMs) {
-    const FULL_CYCLE = 745 * 60000;
-    let t = baseTsMs + TIDE_HALF;
-    while (t < Date.now()) t += FULL_CYCLE;
-    return t;
-  }
+  // ── Kalibriere harmonisches Modell ───────────────────────────────────────
+  _calibrateModel(peaks, troughs, globalMax, globalMin);
 
-  // ── Smart next-event logic ────────────────────────────────────────────────
-  // The window-based peak finder misses very recent peaks (last ~1h) because
-  // it needs readings on both sides. Use the trend direction as tiebreaker:
-  // if currently rising → next event is HW; if falling → next event is NW.
+  // ── Harmonisches Modell: nächster Extrempunkt ────────────────────────────
+  const modelNext = _tidalModel.amplitude !== null ? _nextExtremum(Date.now()) : null;
 
-  let nextType, nextTs;
+  // ── Hybrid: Modell vs. Peak-Finder ───────────────────────────────────────
+  let nextType, nextTs, uncertain = false;
+  const modelUsed = modelNext !== null;
 
-  if (lastHW && lastNW) {
-    const mostRecentPeak = lastHW.ts > lastNW.ts ? 'HW' : 'NW';
+  if (modelUsed) {
+    // ── Primär: Harmonisches Modell ───────────────────────────────────────
+    nextType = modelNext.type;
+    nextTs   = modelNext.ts;
 
-    // Check if trend contradicts the peak-based prediction
-    // e.g. lastHW is most recent but we're currently rising → must have passed NW since then
-    const currentlyRising  = longDelta > 5;
-    const currentlyFalling = longDelta < -5;
+    // Plausibilitätsprüfung: Stimmt Modell mit gemessenem Trend überein?
+    // Wenn Modell NW sagt aber wir steigen stark → vertraue Trend (Windstau)
+    const modelSaysNW = nextType === 'NW';
+    const strongRise  = longDelta >  dynThr * 3;
+    const strongFall  = longDelta < -dynThr * 3;
 
-    if (mostRecentPeak === 'HW') {
-      // After HW → should be falling toward NW
-      if (currentlyRising) {
-        // We're rising despite lastHW being most recent → NW already passed, next is HW
-        nextType='HW'; nextTs=nextFutureTide(lastNW.ts);
-      } else {
-        nextType='NW'; nextTs=nextFutureTide(lastHW.ts);
-      }
-    } else {
-      // After NW → should be rising toward HW
-      if (currentlyFalling) {
-        // We're falling despite lastNW being most recent → HW already passed, next is NW
-        nextType='NW'; nextTs=nextFutureTide(lastHW.ts);
-      } else {
-        nextType='HW'; nextTs=nextFutureTide(lastNW.ts);
-      }
+    if (modelSaysNW && strongRise) {
+      // Wahrscheinlich Windstau — Modell schlägt NW vor aber Pegel steigt stark
+      // Vertraue Trend: nächstes wäre doch HW
+      nextType = 'HW';
+      uncertain = true;
+    } else if (!modelSaysNW && strongFall) {
+      nextType = 'NW';
+      uncertain = true;
     }
-  } else if (lastHW) {
-    nextType = longDelta > 5 ? 'HW' : 'NW';
-    nextTs = nextFutureTide(lastHW.ts);
-  } else if (lastNW) {
-    nextType = longDelta < -5 ? 'NW' : 'HW';
-    nextTs = nextFutureTide(lastNW.ts);
+
+    // Am Kenterpunkt: Modell kennt Peak bereits → keine Unsicherheit mehr nötig
+    // außer wenn Windstau-Korrektur aktiv
+    if (atTurning && !uncertain) {
+      uncertain = false; // Modell stabil — kein ±30min nötig
+    }
   } else {
-    nextType='—'; nextTs=null;
+    // ── Fallback: Peak-Finder ─────────────────────────────────────────────
+    const HALF = 745/2 * 60000;
+    const FULL = 745 * 60000;
+    function nft(base) { let t = base + HALF; while (t < Date.now()) t += FULL; return t; }
+
+    if (atTurning) {
+      const wasUp = prevDelta > dynThr || hourDelta > dynThr * 2;
+      nextType = wasUp ? 'NW' : 'HW';
+      nextTs = lastHW && lastNW ? nft(wasUp ? lastHW.ts : lastNW.ts) : nft(Date.now() - HALF);
+      uncertain = true;
+    } else if (lastHW && lastNW) {
+      const mostRecent = lastHW.ts > lastNW.ts ? 'HW' : 'NW';
+      const rising = longDelta > dynThr, falling = longDelta < -dynThr;
+      nextType = (mostRecent === 'HW') ? (rising ? 'HW' : 'NW') : (falling ? 'NW' : 'HW');
+      nextTs = nft(nextType === 'NW' ? (lastHW ? lastHW.ts : Date.now()) : (lastNW ? lastNW.ts : Date.now()));
+    } else if (lastHW) {
+      nextType = longDelta > dynThr ? 'HW' : 'NW'; nextTs = nft(lastHW.ts);
+    } else if (lastNW) {
+      nextType = longDelta < -dynThr ? 'NW' : 'HW'; nextTs = nft(lastNW.ts);
+    } else {
+      nextType = '—'; nextTs = null;
+    }
   }
 
-  const nextColor = nextType==='HW' ? '#38bdf8' : '#818cf8';
+  // ── Anzeige mit Totzone-UI (Punkt 5) ────────────────────────────────────
+  const nextColor = nextType === 'HW' ? '#38bdf8' : '#818cf8';
   nextTypeEl.innerText   = nextType;
-  nextTypeEl.style.color  = nextColor;
-  // Show estimated level: use last known value of same type as approximation
-  // but only if it's plausible (NW should be < current, HW should be > current)
-  const currentVal = data[data.length-1].value;
-  let estVal = null;
-  if (nextType==='HW' && hwVal && hwVal > currentVal) estVal = hwVal+'cm';
-  else if (nextType==='NW' && nwVal && nwVal < currentVal) estVal = nwVal+'cm';
-  nextValEl.innerText = estVal || '~';
-  nextTimeEl.innerText   = nextTs ? 'ca. '+fmtTide(new Date(nextTs).toISOString()) : '—';
-}
+  nextTypeEl.style.color = nextColor;
 
+  // Amplituden-Schätzung — bevorzuge gemessene Extremwerte, Modell als Fallback
+  let estVal = null;
+  if (nextType === 'HW' && hwVal > current)          estVal = Math.round(hwVal) + 'cm';
+  else if (nextType === 'NW' && nwVal < current)     estVal = Math.round(nwVal) + 'cm';
+  else if (modelUsed && nextType === 'HW')           estVal = Math.round(_tidalModel.meanLevel + _tidalModel.amplitude) + 'cm';
+  else if (modelUsed && nextType === 'NW')           estVal = Math.round(_tidalModel.meanLevel - _tidalModel.amplitude) + 'cm';
+  nextValEl.innerText = estVal || '~';
+
+  if (nextTs) {
+    const DEAD_ZONE_MS = 15 * 60000; // ±15 min Totzone
+    const distToNext = Math.abs(nextTs - Date.now());
+    const inDeadZone = distToNext < DEAD_ZONE_MS;
+
+    if (inDeadZone) {
+      // Totzone: Anzeige einfrieren mit ~ Präfix — kommuniziert Unschärfe ehrlich
+      nextTimeEl.innerText = '~' + fmtTide(new Date(nextTs).toISOString());
+    } else if (uncertain) {
+      nextTimeEl.innerText = 'ca. ' + fmtTide(new Date(nextTs).toISOString()) + ' ±30min';
+    } else {
+      nextTimeEl.innerText = 'ca. ' + fmtTide(new Date(nextTs).toISOString());
+    }
+  } else {
+    nextTimeEl.innerText = '—';
+  }
+}
 function fmtTide(ts){
   const d=new Date(ts),today=new Date().toLocaleDateString();
   return(d.toLocaleDateString()===today?'':'Gestern ')+d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
