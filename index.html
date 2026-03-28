@@ -1057,25 +1057,24 @@ async function fetchMarineTide(lat, lng) {
   }
 }
 
-// ── PEGEL RENDERER — Hybrides Harmonisches Modell ──────────────────────────────
+// ── PEGEL RENDERER — Hybrides Harmonisches Modell v2 ────────────────────────────
 //
-// Architektur:
-//   1. Peak-Finder identifiziert letzte HW/NW aus Messdaten
-//   2. Harmonisches Modell (vereinfachte M2-Sinussumme) berechnet Soll-Kurve
-//   3. Kalibrierung: Phasenverschiebung + Amplituden-Skalierung aus Echtdaten
-//   4. Modell liefert nächste HW/NW — stabil am Kenterpunkt
-//   5. Adaptive Periode: lernt aus gemessenen HW/NW-Abständen (M2 ≈ 12.42h)
-//   6. Globale Anpassung: erkennt diurnale Gezeiten (24h-Periode)
+// Fixes v2:
+//   - Amplitude aus gemessenen Peak/Trough-Werten statt globalMax/Min (Ausreißer-sicher)
+//   - Confidence-Sperre ±20min um Extrempunkte
+//   - Totzone ±15min: erzwingt ↔ Trend, zeigt ~HH:MM
+//   - EMA α=0.3 für phaseOffset und Periode
+//   - Diurnal-Erkennung (>20h) mit 24h-Snap
 
 const _tidalModel = {
-  // Kalibrierungsparameter — werden aus Echtzeitdaten gelernt
-  period:    12.42 * 3600000,  // M2-Basis in ms (12h 25min)
-  phase:     0,                // Phasenoffset in ms (aus letztem HW gelernt)
-  amplitude: null,             // Amplitude in cm (aus globalMax/Min gelernt)
-  meanLevel: null,             // Mittlerer Wasserstand in cm
-  phaseOffset: 0,              // Windstau-Korrektur (beobachtet vs. Modell)
-  diurnal:   false,            // true = 24h-Periode (einige Küsten Australiens)
-  lastCalib:  0,               // Zeitstempel der letzten Kalibrierung
+  period:     12.42 * 3600000, // M2-Basis ms
+  phase:      0,               // letztes HW-Timestamp (Referenz)
+  amplitude:  null,            // Halbamplitude cm (aus gemessenen Peaks/Troughs)
+  meanLevel:  null,            // Mittelwasser cm
+  phaseOffset: 0,              // Windstau-Korrektur ms, EMA-geglättet
+  diurnal:    false,           // 24h-Modus
+  lastCalib:  0,               // letzter Kalibrierzeitpunkt ms
+  frozen:     false,           // true = Confidence-Sperre aktiv
 };
 
 // Gleitender Durchschnitt
@@ -1116,62 +1115,88 @@ function _nextExtremum(afterTs) {
   return candidates[0] || null;
 }
 
-// Modell kalibrieren — mit Confidence-Sperre am Kenterpunkt
+// Modell kalibrieren — robust gegen Ausreißer, mit Confidence-Sperre
 function _calibrateModel(peaks, troughs, globalMax, globalMin) {
   const m = _tidalModel;
   const now = Date.now();
-  if (now - m.lastCalib < 300000) return; // max alle 5 min
+  if (now - m.lastCalib < 300000) return; // Throttle: max alle 5 min
 
-  // ── 1. Confidence-Sperre: kein Update innerhalb ±20min eines Extremums ────
-  // Kurz vor/nach dem Peak sind Messwerte am unruhigsten — Modell starr halten
-  const FREEZE_MS = 20 * 60000; // 20 Minuten in ms
+  // ── Confidence-Sperre (±20min um Extrempunkt) ─────────────────────────────
+  // In der Nähe des Peaks: Modell einfrieren, keine Kalibrierung
+  const FREEZE_MS = 20 * 60000;
   if (m.amplitude !== null) {
-    const nextEx = _nextExtremum(now);
-    const prevEx = _nextExtremum(now - m.period * 0.6); // vorheriger Extrempunkt
-    const nearNext = nextEx && Math.abs(nextEx.ts - now) < FREEZE_MS;
-    const nearPrev = Math.abs((prevEx ? prevEx.ts + (m.diurnal ? m.period*2 : m.period)/2 : 0) - now) < FREEZE_MS;
-    if (nearNext) return; // Eingefroren — Modell führt durch den Peak
+    const nx = _nextExtremum(now);
+    if (nx && Math.abs(nx.ts - now) < FREEZE_MS) {
+      m.frozen = true;
+      return; // Sperre aktiv
+    }
   }
+  m.frozen = false;
   m.lastCalib = now;
 
-  // ── 2. Amplituden-Skalierung aus 72h-Daten (Punkt 4: dynamisch) ─────────
-  m.amplitude = (globalMax - globalMin) / 2;
-  m.meanLevel = (globalMax + globalMin) / 2;
-
-  // ── 3. Adaptive Periode mit EMA α=0.3 (Punkt 2 + 3) ─────────────────────
-  if (peaks.length >= 2) {
-    const intervals = [];
-    for (let i = 1; i < peaks.length; i++)
-      intervals.push(peaks[i].ts - peaks[i-1].ts);
-    const avgInterval = intervals.reduce((a,b) => a+b, 0) / intervals.length;
-
-    if (avgInterval > 10*3600000 && avgInterval < 27*3600000) {
-      m.period = m.period * 0.7 + avgInterval * 0.3; // EMA α=0.3
+  // ── Amplitude aus gemessenen Peak/Trough-Werten (Ausreißer-sicher) ────────
+  // Nutze den MEDIAN der gefundenen Peaks/Troughs statt globalMax/Min
+  // → verhindert dass einzelne Messausreißer die Amplitude verfälschen
+  if (peaks.length >= 1 && troughs.length >= 1) {
+    const hwVals = peaks.map(p => p.val).sort((a,b) => a-b);
+    const nwVals = troughs.map(p => p.val).sort((a,b) => a-b);
+    // Median (oder Durchschnitt der mittleren 50%)
+    const medHW = hwVals[Math.floor(hwVals.length * 0.5)];
+    const medNW = nwVals[Math.floor(nwVals.length * 0.5)];
+    // Plausibilitätscheck: Amplitude zwischen 10 cm und 600 cm
+    const candidateAmp = (medHW - medNW) / 2;
+    if (candidateAmp > 10 && candidateAmp < 600) {
+      m.amplitude = candidateAmp;
+      m.meanLevel = (medHW + medNW) / 2;
     }
-    // Diurnal: > 20h → 24h-Basis; sonst M2 (12.42h)
+  } else if (m.amplitude === null) {
+    // Kein Peak/Trough gefunden — nutze globalMax/Min als Fallback
+    // Aber nur wenn Bereich plausibel (< 600cm Amplitude)
+    const fallbackAmp = (globalMax - globalMin) / 2;
+    if (fallbackAmp < 600) {
+      m.amplitude = fallbackAmp;
+      m.meanLevel = (globalMax + globalMin) / 2;
+    }
+  }
+
+  // ── Adaptive Periode — EMA α=0.3 ─────────────────────────────────────────
+  if (peaks.length >= 2) {
+    // Alle HW-HW-Intervalle berechnen
+    const intervals = [];
+    for (let i = 1; i < peaks.length; i++) {
+      const iv = peaks[i].ts - peaks[i-1].ts;
+      if (iv > 8*3600000 && iv < 30*3600000) intervals.push(iv); // Plausibel?
+    }
+    if (intervals.length > 0) {
+      const avgIv = intervals.reduce((a,b)=>a+b,0) / intervals.length;
+      m.period = m.period * 0.7 + avgIv * 0.3; // EMA α=0.3
+    }
+    // Diurnal vs. semidiurnal
     if (m.period > 20*3600000) {
       m.diurnal = true;
-      m.period  = m.period * 0.7 + 24*3600000 * 0.3; // snap toward 24h
+      m.period  = m.period * 0.7 + 24*3600000 * 0.3; // Snap toward 24h
     } else {
       m.diurnal = false;
-      // Sanfter Pull back to M2 if drifting
+      // Sanfter Pull-back zu M2 wenn zu weit abgedriftet
       if (m.period < 11*3600000 || m.period > 14*3600000)
         m.period = m.period * 0.7 + 12.42*3600000 * 0.3;
     }
   }
 
-  // ── 4. Phase + phaseOffset mit EMA α=0.3 ─────────────────────────────────
+  // ── Phase & phaseOffset — EMA α=0.3 ──────────────────────────────────────
   const lastHW = peaks.length ? peaks[peaks.length-1] : null;
   if (lastHW) {
-    m.phase = lastHW.ts; // Referenz-HW
-
+    m.phase = lastHW.ts;
+    // Windstau-Korrektur: gemessenes NW vs. Modell-Mitte
     if (peaks.length >= 2) {
       const prevHW = peaks[peaks.length-2];
       const midTs  = prevHW.ts + (lastHW.ts - prevHW.ts) / 2;
       const measNW = troughs.length ? troughs[troughs.length-1] : null;
-      if (measNW && Math.abs(measNW.ts - midTs) < 2*3600000) {
+      if (measNW && Math.abs(measNW.ts - midTs) < 3*3600000) {
         const drift = measNW.ts - midTs;
-        m.phaseOffset = m.phaseOffset * 0.7 + drift * 0.3; // EMA α=0.3
+        // Plausibilitätscheck: Drift max ±2h
+        if (Math.abs(drift) < 2*3600000)
+          m.phaseOffset = m.phaseOffset * 0.7 + drift * 0.3;
       }
     }
   }
@@ -1327,31 +1352,44 @@ function renderPegelData(data, showTides) {
     }
   }
 
-  // ── Anzeige mit Totzone-UI (Punkt 5) ────────────────────────────────────
+  // ── Totzone-Check: ±15min um nächsten Extrempunkt ──────────────────────────
+  const DEAD_ZONE_MS = 15 * 60000;
+  const distToNext   = nextTs ? Math.abs(nextTs - Date.now()) : Infinity;
+  const inDeadZone   = distToNext < DEAD_ZONE_MS;
+
+  // Trend-Symbol-Fix (Punkt 3): In Totzone immer ↔ erzwingen
+  // Verhindert widersprüchliche Kombination ↑ + "1 Min bis HW"
+  if (inDeadZone && showTides) {
+    trendEl.innerText = '↔'; trendEl.style.color = '#f59e0b'; trendLbl.innerText = 'Kentert';
+  }
+
+  // ── Anzeige ──────────────────────────────────────────────────────────────
   const nextColor = nextType === 'HW' ? '#38bdf8' : '#818cf8';
   nextTypeEl.innerText   = nextType;
   nextTypeEl.style.color = nextColor;
 
-  // Amplituden-Schätzung — bevorzuge gemessene Extremwerte, Modell als Fallback
+  // Amplituden-Schätzung: bevorzuge gemessene Extremwerte (Median-basiert)
+  // Modell-Amplitude als Fallback — aber nur wenn plausibel (<600cm)
   let estVal = null;
-  if (nextType === 'HW' && hwVal > current)          estVal = Math.round(hwVal) + 'cm';
-  else if (nextType === 'NW' && nwVal < current)     estVal = Math.round(nwVal) + 'cm';
-  else if (modelUsed && nextType === 'HW')           estVal = Math.round(_tidalModel.meanLevel + _tidalModel.amplitude) + 'cm';
-  else if (modelUsed && nextType === 'NW')           estVal = Math.round(_tidalModel.meanLevel - _tidalModel.amplitude) + 'cm';
+  const modelAmpPlausible = _tidalModel.amplitude && _tidalModel.amplitude < 600;
+  if (nextType === 'HW' && hwVal > current)      estVal = Math.round(hwVal) + 'cm';
+  else if (nextType === 'NW' && nwVal < current) estVal = Math.round(nwVal) + 'cm';
+  else if (modelAmpPlausible && nextType === 'HW')
+    estVal = Math.round(_tidalModel.meanLevel + _tidalModel.amplitude) + 'cm';
+  else if (modelAmpPlausible && nextType === 'NW')
+    estVal = Math.round(_tidalModel.meanLevel - _tidalModel.amplitude) + 'cm';
   nextValEl.innerText = estVal || '~';
 
+  // Zeitanzeige mit Totzone-Kommunikation (Punkt 2)
   if (nextTs) {
-    const DEAD_ZONE_MS = 15 * 60000; // ±15 min Totzone
-    const distToNext = Math.abs(nextTs - Date.now());
-    const inDeadZone = distToNext < DEAD_ZONE_MS;
-
+    const timeStr = fmtTide(new Date(nextTs).toISOString());
     if (inDeadZone) {
-      // Totzone: Anzeige einfrieren mit ~ Präfix — kommuniziert Unschärfe ehrlich
-      nextTimeEl.innerText = '~' + fmtTide(new Date(nextTs).toISOString());
+      // Totzone: ~ Präfix signalisiert mathematische Unschärfe am Scheitelpunkt
+      nextTimeEl.innerText = '~' + timeStr;
     } else if (uncertain) {
-      nextTimeEl.innerText = 'ca. ' + fmtTide(new Date(nextTs).toISOString()) + ' ±30min';
+      nextTimeEl.innerText = 'ca. ' + timeStr + ' ±30min';
     } else {
-      nextTimeEl.innerText = 'ca. ' + fmtTide(new Date(nextTs).toISOString());
+      nextTimeEl.innerText = 'ca. ' + timeStr;
     }
   } else {
     nextTimeEl.innerText = '—';
