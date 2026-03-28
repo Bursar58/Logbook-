@@ -57,15 +57,14 @@
   /* Smooth transition beim Wechsel */
   body, body * { transition: background-color 0.3s ease, color 0.2s ease, border-color 0.3s ease; }
 
-  /* Toggle-Button */
+  /* Toggle-Button — inline im Header, kein fixed */
   #theme-toggle {
-    position: fixed; top: 12px; right: 12px; z-index: 1000;
-    width: 36px; height: 36px; border-radius: 50%;
+    width: 34px; height: 34px; border-radius: 50%;
     background: var(--tile-bg); border: 1px solid var(--tile-border);
     backdrop-filter: blur(12px); cursor: pointer;
     display: flex; align-items: center; justify-content: center;
-    font-size: 18px; color: var(--text-primary);
-    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    font-size: 16px; color: var(--text-primary);
+    flex-shrink: 0;
     transition: transform 0.2s ease;
   }
   #theme-toggle:active { transform: scale(0.9); }
@@ -258,7 +257,6 @@
 <body>
 
 <div id="toast"></div>
-<button id="theme-toggle" onclick="toggleTheme()" title="Tag/Nacht">🌙</button>
 <div id="pdf-overlay">
   <div class="spinner"></div>
   <div style="color:var(--accent);font-size:14px;font-family:'Inter',sans-serif;">PDF wird erstellt…</div>
@@ -418,9 +416,12 @@
       <div class="font-bebas" style="font-size:24px; color:var(--accent); line-height:1;" id="dash-title">System Ready</div>
       <div id="vessel-header" style="font-size:11px;color:var(--text-muted);margin-top:2px;display:none;"></div>
     </div>
-    <button onclick="openVessel()" style="background:rgba(56,189,248,0.08);border:1px solid var(--tile-border);color:var(--text-muted);border-radius:10px;padding:5px 10px;font-size:10px;font-weight:600;cursor:pointer;letter-spacing:0.5px;">
-      ⚙ SCHIFF
-    </button>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <button id="theme-toggle" onclick="toggleTheme()" title="Tag/Nacht">🌙</button>
+      <button onclick="openVessel()" style="background:rgba(56,189,248,0.08);border:1px solid var(--tile-border);color:var(--text-muted);border-radius:10px;padding:5px 10px;font-size:10px;font-weight:600;cursor:pointer;letter-spacing:0.5px;">
+        ⚙ SCHIFF
+      </button>
+    </div>
   </div>
 
   <div class="glass-tile" style="margin-bottom:12px;">
@@ -687,7 +688,20 @@ function startGps() {
   if (!navigator.geolocation) {
     document.getElementById('pos-display').innerText = 'GPS nicht verfügbar'; return;
   }
+  // Suchanzeige mit Punktanimation
+  let _gpsSearchDots = 0;
+  const _gpsSearchTimer = setInterval(() => {
+    _gpsSearchDots = (_gpsSearchDots + 1) % 4;
+    const el = document.getElementById('pos-display');
+    if (el && el.innerText.startsWith('Suche')) {
+      el.innerText = 'Suche Satelliten' + '.'.repeat(_gpsSearchDots);
+    } else {
+      clearInterval(_gpsSearchTimer);
+    }
+  }, 600);
+
   watchId = navigator.geolocation.watchPosition(pos => {
+    clearInterval(_gpsSearchTimer);
     const { latitude, longitude, speed, heading } = pos.coords;
     const rawSpeed = speed || 0;
     const sog = formatSpeed(rawSpeed);
@@ -710,8 +724,16 @@ function startGps() {
     updateEnvironment(latitude, longitude);
     if (tripActive && trackingReady) handleSmartTracking(latitude, longitude, speed, heading);
   }, e => {
-    document.getElementById('pos-display').innerText = 'GPS-Fehler: ' + e.message;
-  }, { enableHighAccuracy: true, timeout: 30000 });
+    clearInterval(_gpsSearchTimer);
+    const msgs = { 1:'Zugriff verweigert — GPS-Berechtigung prüfen', 2:'Position nicht verfügbar', 3:'Timeout — GPS neu starten' };
+    document.getElementById('pos-display').innerText = msgs[e.code] || ('GPS-Fehler: ' + e.message);
+    // Retry nach 5s bei Timeout
+    if (e.code === 3) setTimeout(startGps, 5000);
+  }, {
+    enableHighAccuracy: true,
+    timeout: 15000,       // 15s statt 30s — schnellere Fehleranzeige
+    maximumAge: 10000,    // Cachet Position bis 10s — hilft bei kurzen Unterbrechungen
+  });
 }
 
 function handleSmartTracking(lat, lng, speed, heading) {
@@ -1981,10 +2003,15 @@ function initFabDrag() {
 
   let dragging = false, startY = 0, startTop = 0;
 
-  // Restore saved position
+  // Restore saved position — sicher begrenzt auf sichtbaren Bereich
   const savedTop = parseInt(localStorage.getItem('fab_top'));
-  if (savedTop) {
-    group.style.top = Math.max(10, Math.min(window.innerHeight - 220, savedTop)) + 'px';
+  const maxTop = window.innerHeight - 220;
+  if (savedTop && savedTop > 10 && savedTop < maxTop) {
+    group.style.top = savedTop + 'px';
+  } else {
+    // Ungültiger oder fehlender Wert → sicher zurücksetzen
+    group.style.top = '200px';
+    localStorage.removeItem('fab_top');
   }
 
   function clamp(val) {
