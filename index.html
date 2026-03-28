@@ -99,16 +99,6 @@
   }
 
   #leaflet-map { height: calc(100vh - 160px); border-radius: 16px; z-index: 1; }
-  #radar-controls { bottom: 20px; }
-  @keyframes radar-pulse {
-    0%,100% { box-shadow: 0 0 0 0 rgba(56,189,248,0.4); }
-    50%      { box-shadow: 0 0 0 6px rgba(56,189,248,0); }
-  }
-  #radar-toggle-btn.active {
-    background: rgba(56,189,248,0.15);
-    border-color: rgba(56,189,248,0.6);
-    animation: radar-pulse 2s ease-in-out infinite;
-  }
 
   nav {
     position: fixed; bottom: 0; left: 0; right: 0;
@@ -357,24 +347,7 @@
 
 <dialog id="radar-dialog">
   <div class="dlg-title" style="color:var(--accent);">Wetterradar</div>
-
-  <!-- RainViewer: direkt in der Karte -->
-  <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:6px;">In der Karte</div>
-  <button id="radar-dialog-rv-btn" onclick="_toggleRadarFromDialog()" style="
-    width:100%; text-align:left; padding:12px 16px; margin-bottom:14px;
-    background:rgba(56,189,248,0.12); border:1px solid rgba(56,189,248,0.4);
-    color:var(--accent); border-radius:10px; cursor:pointer;
-    display:flex; align-items:center; gap:10px; font-size:13px; font-weight:600;">
-    <span style="font-size:18px;">◉</span>
-    <div>
-      <div>RainViewer — Live Radar Animation</div>
-      <div style="font-size:10px;font-weight:400;color:var(--text-muted);margin-top:2px;">10 Frames + Nowcast · direkt auf der Karte</div>
-    </div>
-    <span id="radar-dialog-status" style="margin-left:auto;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:rgba(56,189,248,0.15);">AUS</span>
-  </button>
-
-  <!-- Externe Links -->
-  <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:6px;">Externe Dienste</div>
+  <div style="font-size:11px;color:var(--text-muted);margin-bottom:12px;">Öffnet externen Dienst im Browser</div>
   <div style="display:flex;flex-direction:column;gap:8px;">
     <button class="btn-primary" onclick="openRadar('https://www.dwd.de/DE/leistungen/radarbild_film/radarbild_film.html')" style="text-align:left;padding:12px 16px;">
       🌧 DWD Radar — Deutscher Wetterdienst
@@ -387,6 +360,9 @@
     </button>
     <button class="btn-primary" style="background:rgba(129,140,248,0.15);color:var(--accent2);border:1px solid rgba(129,140,248,0.3);text-align:left;padding:12px 16px;" onclick="openRadar('https://www.windy.com/?waves,53.5,10.0,9')">
       🌊 Windy — Seegang & Wellen
+    </button>
+    <button class="btn-primary" style="background:rgba(56,189,248,0.15);color:var(--accent);border:1px solid var(--tile-border);text-align:left;padding:12px 16px;" onclick="openRadar('https://www.rainviewer.com/map.html?loc=53.55,9.99,8&oFa=0&oC=0&oU=0&oCS=1&oF=0&oAP=1&rmt=4&ext=1&net=0&oTM=0&oRM=0')">
+      🛰 RainViewer — Animiertes Niederschlagsradar
     </button>
   </div>
   <button class="btn-secondary" style="margin-top:10px;" onclick="document.getElementById('radar-dialog').close()">Schließen</button>
@@ -584,28 +560,8 @@
 </div>
 
 <!-- MAP PAGE -->
-<div id="map" class="page" style="position:relative;">
+<div id="map" class="page">
   <div id="leaflet-map"></div>
-  <!-- Radar-Steuerung: Toggle + Zeitanzeige -->
-  <div id="radar-controls" style="
-    position:absolute; bottom:16px; left:50%; transform:translateX(-50%);
-    z-index:1000; display:flex; align-items:center; gap:8px; pointer-events:auto;">
-    <button id="radar-toggle-btn" onclick="toggleRadar()" style="
-      background:rgba(2,6,23,0.75); backdrop-filter:blur(12px);
-      border:1px solid rgba(56,189,248,0.3); color:var(--accent);
-      border-radius:20px; padding:6px 14px; font-size:11px; font-weight:700;
-      cursor:pointer; letter-spacing:0.5px; display:flex; align-items:center; gap:6px;">
-      <span id="radar-toggle-icon">◉</span>
-      <span id="radar-toggle-label">RADAR EIN</span>
-    </button>
-    <div id="radar-time-info" style="
-      background:rgba(2,6,23,0.75); backdrop-filter:blur(12px);
-      border:1px solid rgba(56,189,248,0.2); color:#f1f5f9;
-      border-radius:20px; padding:6px 14px; font-size:11px;
-      font-family:'Space Mono',monospace; display:none; white-space:nowrap;">
-      --:-- ◌
-    </div>
-  </div>
 </div>
 
 <!-- LOG PAGE -->
@@ -697,157 +653,8 @@ function initMap() {
   L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', {
     attribution: '© OpenSeaMap', maxZoom: 18
   }).addTo(myMap);
-
-  // RainViewer initialisieren (verzögert damit Karte fertig gerendert ist)
-  setTimeout(initRainViewer, 800);
 }
 
-// ── RAINVIEWER RADAR ──────────────────────────────────────────────────────────
-const _rv = {
-  layers:      [],      // Leaflet-Layer für jeden Zeitstempel
-  timestamps:  [],      // Unix-Timestamps der Frames
-  currentIdx:  0,       // aktuell sichtbarer Frame
-  animTimer:   null,    // setInterval-Handle
-  active:      false,   // Radar ein/aus
-  colorScheme: 2,       // 2=Universal Blue, 1=Original, 4=TheWeatherChannel
-  opacity:     0.6,     // Glass-Look
-  apiLoaded:   false,
-};
-
-async function initRainViewer() {
-  try {
-    const res  = await fetch('https://api.rainviewer.com/public/weather-maps.json');
-    const data = await res.json();
-
-    // Letzten 10 Vergangenheits-Frames + ersten Nowcast-Frame
-    const past     = (data.radar?.past    || []).slice(-10);
-    const nowcast  = (data.radar?.nowcast || []).slice(0, 1);
-    const allFrames = [...past, ...nowcast];
-
-    if (!allFrames.length) { console.warn('RainViewer: keine Frames'); return; }
-
-    _rv.timestamps = allFrames.map(f => f.time);
-    _rv.host       = data.host;
-    _rv.layers     = [];
-
-    // KORREKTES URL-Format (seit 2024): frame.path statt frame.time
-    // Max Zoom Level = 7 (RainViewer Limit) → minZoom/maxZoom setzen
-    // URL: {host}{path}/256/{z}/{x}/{y}/{colorScheme}/{options}.png
-    // options: {smooth}_{snow}  z.B. "1_1" = smoothed + snow
-    for (const frame of allFrames) {
-      const url = `${data.host}${frame.path}/256/{z}/{x}/{y}/${_rv.colorScheme}/1_1.png`;
-      const layer = L.tileLayer(url, {
-        opacity:     0,
-        tileSize:    256,
-        zIndex:      100,
-        minZoom:     0,
-        maxZoom:     7,       // RainViewer Hard-Limit
-        attribution: '© RainViewer',
-      });
-      _rv.layers.push(layer);
-    }
-
-    _rv.apiLoaded = true;
-    console.log(`RainViewer: ${allFrames.length} Frames (${past.length} hist + ${nowcast.length} nowcast)`);
-
-  } catch(e) {
-    console.warn('RainViewer init failed:', e);
-  }
-}
-
-function toggleRadar() {
-  if (!_rv.apiLoaded) {
-    showToast('Radar lädt noch…');
-    initRainViewer().then(() => { if(_rv.apiLoaded) toggleRadar(); });
-    return;
-  }
-  _rv.active = !_rv.active;
-  _updateRadarUI();
-  if (_rv.active) _startRadarAnimation();
-  else            _stopRadarAnimation();
-}
-
-// Aus dem Radar-Dialog heraus aufrufen (schließt Dialog und wechselt zur Karte)
-function _toggleRadarFromDialog() {
-  document.getElementById('radar-dialog').close();
-  // Zur Karten-Tab wechseln
-  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  document.getElementById('map').classList.add('active');
-  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-  document.querySelector('.nav-btn[onclick*="map"]')?.classList.add('active');
-  // Radar togglen
-  setTimeout(toggleRadar, 100);
-}
-
-function _updateRadarUI() {
-  const btn  = document.getElementById('radar-toggle-btn');
-  const lbl  = document.getElementById('radar-toggle-label');
-  const info = document.getElementById('radar-time-info');
-  const dlgStatus = document.getElementById('radar-dialog-status');
-
-  if (_rv.active) {
-    btn?.classList.add('active');
-    if (lbl) lbl.innerText = 'RADAR AUS';
-    if (info) info.style.display = 'block';
-    if (dlgStatus) { dlgStatus.innerText='AN'; dlgStatus.style.background='rgba(52,211,153,0.2)'; dlgStatus.style.color='#34d399'; }
-  } else {
-    btn?.classList.remove('active');
-    if (lbl) lbl.innerText = 'RADAR EIN';
-    if (info) info.style.display = 'none';
-    if (dlgStatus) { dlgStatus.innerText='AUS'; dlgStatus.style.background='rgba(56,189,248,0.15)'; dlgStatus.style.color='var(--accent)'; }
-  }
-}
-
-function _showRadarFrame(idx) {
-  _rv.layers.forEach((layer, i) => {
-    if (!myMap.hasLayer(layer) && i === idx) layer.addTo(myMap);
-    layer.setOpacity(i === idx ? _rv.opacity : 0);
-  });
-  _rv.currentIdx = idx;
-
-  const ts   = _rv.timestamps[idx];
-  const diff = ts - Math.floor(Date.now() / 1000);
-  const hhmm = new Date(ts * 1000).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
-  const isForecast = diff > 60;
-
-  // Zoom-Warnung: RainViewer max Zoom = 7
-  const zoom    = myMap.getZoom();
-  const zoomOk  = zoom <= 7;
-
-  const infoEl = document.getElementById('radar-time-info');
-  if (infoEl) {
-    if (!zoomOk) {
-      infoEl.innerText      = '⊖ Rauszoomen für Radar';
-      infoEl.style.color    = '#f59e0b';
-      infoEl.style.borderColor = 'rgba(245,158,11,0.4)';
-    } else {
-      infoEl.innerText      = isForecast ? `+${Math.round(diff/60)}min ▶ ${hhmm}` : `${hhmm} ●`;
-      infoEl.style.color    = isForecast ? '#f59e0b' : '#f1f5f9';
-      infoEl.style.borderColor = isForecast ? 'rgba(245,158,11,0.4)' : 'rgba(56,189,248,0.2)';
-    }
-  }
-}
-
-function _startRadarAnimation() {
-  if (!_rv.layers.length) return;
-  // RainViewer max zoom = 7 → automatisch rauszoomen wenn nötig
-  if (myMap.getZoom() > 7) {
-    myMap.setZoom(7);
-    showToast('Radar: Zoom auf Stufe 7 reduziert');
-  }
-  _showRadarFrame(0);
-  _rv.animTimer = setInterval(() => {
-    _showRadarFrame((_rv.currentIdx + 1) % _rv.layers.length);
-  }, 600);
-}
-
-function _stopRadarAnimation() {
-  if (_rv.animTimer) { clearInterval(_rv.animTimer); _rv.animTimer = null; }
-  // Alle Layer aus Karte entfernen
-  _rv.layers.forEach(layer => {
-    if (myMap.hasLayer(layer)) myMap.removeLayer(layer);
-  });
-}
 
 // ── GPS ───────────────────────────────────────────────────────────────────────
 function startGps() {
