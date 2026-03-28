@@ -29,6 +29,47 @@
     --recording: #ef4444;
   }
 
+  /* ── Tag-Modus ──────────────────────────────────────────────────────────── */
+  body.day-mode {
+    --bg-dark: #f0f4f8;
+    --bg-gradient: linear-gradient(135deg, #e8eef5 0%, #dce6f0 100%);
+    --tile-bg: rgba(255, 255, 255, 0.75);
+    --tile-border: rgba(14, 165, 233, 0.25);
+    --text-primary: #0f172a;
+    --text-muted: #475569;
+    --accent: #0284c7;
+    --accent2: #6366f1;
+    --green: #059669;
+    --recording: #dc2626;
+  }
+  body.day-mode nav {
+    background: rgba(240,244,248,0.92);
+    border-top-color: rgba(14,165,233,0.2);
+  }
+  body.day-mode dialog {
+    background: #f8fafc;
+    color: #0f172a;
+    border-color: var(--accent);
+  }
+  body.day-mode #toast { background: #0f172a; color: #fff; }
+  body.day-mode .fab-group { filter: brightness(0.92) saturate(1.1); }
+
+  /* Smooth transition beim Wechsel */
+  body, body * { transition: background-color 0.3s ease, color 0.2s ease, border-color 0.3s ease; }
+
+  /* Toggle-Button */
+  #theme-toggle {
+    position: fixed; top: 12px; right: 12px; z-index: 1000;
+    width: 36px; height: 36px; border-radius: 50%;
+    background: var(--tile-bg); border: 1px solid var(--tile-border);
+    backdrop-filter: blur(12px); cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; color: var(--text-primary);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    transition: transform 0.2s ease;
+  }
+  #theme-toggle:active { transform: scale(0.9); }
+
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   body {
     margin: 0; font-family: 'Inter', sans-serif;
@@ -212,76 +253,12 @@
   #revert-bar.show { display: flex; }
   .revert-progress { flex: 1; height: 4px; background: rgba(245,158,11,0.2); border-radius: 2px; overflow: hidden; }
   .revert-fill { height: 100%; background: #f59e0b; border-radius: 2px; transition: width 1s linear; width: 100%; }
-
-  /* ── Maritime Intelligence: Safety Banner ─────────────────────────────── */
-  @keyframes slideDown {
-    from { transform: translateY(-100%); opacity: 0; }
-    to   { transform: translateY(0);     opacity: 1; }
-  }
-  @keyframes pulse-amber {
-    0%,100% { opacity: 1; }
-    50%      { opacity: 0.6; }
-  }
-  @keyframes pulse-red {
-    0%,100% { box-shadow: 0 4px 24px rgba(239,68,68,0.3); }
-    50%      { box-shadow: 0 4px 40px rgba(239,68,68,0.7); }
-  }
-  #safety-banner {
-    position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
-    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-    border-bottom: 1px solid rgba(255,255,255,0.1);
-    padding: 12px 16px;
-    display: none; flex-direction: column; gap: 6px;
-    animation: slideDown 0.4s cubic-bezier(0.16,1,0.3,1);
-  }
-  #safety-banner.amber {
-    background: rgba(245,158,11,0.18);
-    border-bottom-color: rgba(245,158,11,0.4);
-  }
-  #safety-banner.red {
-    background: rgba(239,68,68,0.2);
-    border-bottom-color: rgba(239,68,68,0.5);
-    animation: slideDown 0.4s cubic-bezier(0.16,1,0.3,1), pulse-red 2s ease-in-out infinite;
-  }
-  #safety-banner.show { display: flex; }
-  .banner-row { display: flex; align-items: center; justify-content: space-between; }
-  .banner-icon { width: 22px; height: 22px; flex-shrink: 0;
-    filter: drop-shadow(0 0 6px currentColor); }
-  .banner-level { font-size: 9px; font-weight: 700; letter-spacing: 1.5px;
-    text-transform: uppercase; opacity: 0.7; }
-  .banner-msg { font-size: 13px; font-weight: 600; line-height: 1.3; }
-  .banner-detail { font-size: 11px; opacity: 0.75; }
-  .banner-close { width: 28px; height: 28px; border-radius: 50%;
-    background: rgba(255,255,255,0.1); border: none; cursor: pointer;
-    color: #f1f5f9; font-size: 14px; display: flex; align-items: center;
-    justify-content: center; flex-shrink: 0; }
-  /* Wetter-Tile: Icon + Desc nebeneinander */
-  #wx-icon svg { width:42px; height:42px; display:block; }
-  .wx-main-row { display:flex; align-items:center; gap:12px; margin-bottom:12px; }
-  .wx-label-col { flex:1; min-width:0; }
-  .wx-temp-col  { flex-shrink:0; text-align:right; }
-  .wx-data-row  { display:grid; grid-template-columns:1fr 1fr; gap:8px;
-    border-top:1px solid rgba(56,189,248,0.12); padding-top:8px; }
 </style>
 </head>
 <body>
 
 <div id="toast"></div>
-
-<!-- Maritime Intelligence: Safety Banner -->
-<div id="safety-banner">
-  <div class="banner-row">
-    <div style="display:flex;align-items:center;gap:8px;">
-      <div id="banner-icon" class="banner-icon" style="color:#f59e0b;"></div>
-      <div>
-        <div id="banner-level" class="banner-level">Warnung</div>
-        <div id="banner-msg" class="banner-msg">--</div>
-      </div>
-    </div>
-    <button class="banner-close" onclick="_hideBanner()">✕</button>
-  </div>
-  <div id="banner-detail" class="banner-detail"></div>
-</div>
+<button id="theme-toggle" onclick="toggleTheme()" title="Tag/Nacht">🌙</button>
 <div id="pdf-overlay">
   <div class="spinner"></div>
   <div style="color:var(--accent);font-size:14px;font-family:'Inter',sans-serif;">PDF wird erstellt…</div>
@@ -360,9 +337,6 @@
     </button>
     <button class="btn-primary" style="background:rgba(129,140,248,0.15);color:var(--accent2);border:1px solid rgba(129,140,248,0.3);text-align:left;padding:12px 16px;" onclick="openRadar('https://www.windy.com/?waves,53.5,10.0,9')">
       🌊 Windy — Seegang & Wellen
-    </button>
-    <button class="btn-primary" style="background:rgba(56,189,248,0.15);color:var(--accent);border:1px solid var(--tile-border);text-align:left;padding:12px 16px;" onclick="openRadar('https://www.rainviewer.com/map.html?loc=53.55,9.99,8&oFa=0&oC=0&oU=0&oCS=1&oF=0&oAP=1&rmt=4&ext=1&net=0&oTM=0&oRM=0')">
-      🛰 RainViewer — Animiertes Niederschlagsradar
     </button>
   </div>
   <button class="btn-secondary" style="margin-top:10px;" onclick="document.getElementById('radar-dialog').close()">Schließen</button>
@@ -504,49 +478,27 @@
     </div>
   </div>
 
-  <!-- WETTER TILE + Maritime Intelligence -->
+  <!-- WETTER TILE -->
   <div class="glass-tile" style="margin-top:12px;" id="weather-tile">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
       <span class="label">Wetter</span>
-      <div style="display:flex;gap:6px;align-items:center;">
-        <div id="wx-beaufort" style="font-size:10px;font-weight:700;color:var(--text-muted);display:none;"></div>
-        <button onclick="openRadarMenu()" style="background:rgba(56,189,248,0.1);border:1px solid var(--tile-border);color:var(--accent);border-radius:8px;padding:3px 10px;font-size:10px;font-weight:600;cursor:pointer;letter-spacing:0.5px;">RADAR ▾</button>
-      </div>
+      <button onclick="openRadarMenu()" style="background:rgba(56,189,248,0.1);border:1px solid var(--tile-border);color:var(--accent);border-radius:8px;padding:3px 10px;font-size:10px;font-weight:600;cursor:pointer;letter-spacing:0.5px;">RADAR ▾</button>
     </div>
-    <!-- Icon · Label · Temperatur -->
-    <div class="wx-main-row">
-      <div id="wx-icon" style="width:42px;height:42px;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#f8fafc;filter:drop-shadow(0 0 8px rgba(255,255,255,0.25));"></div>
-      <div class="wx-label-col">
-        <div id="wx-desc" style="font-size:14px;font-weight:600;color:#f8fafc;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">--</div>
-        <div id="wx-desc-sub" style="font-size:10px;color:var(--text-muted);margin-top:2px;"></div>
-      </div>
-      <div class="wx-temp-col">
-        <div class="font-mono" style="font-size:30px;font-weight:700;line-height:1;" id="wx-temp">--</div>
-        <div style="font-size:10px;color:var(--text-muted);">°C</div>
-      </div>
-    </div>
-    <!-- Wind · Richtung · Wellen -->
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;border-top:1px solid rgba(56,189,248,0.12);padding-top:8px;">
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
       <div>
         <div style="font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:2px;">Wind</div>
-        <div style="display:flex;align-items:baseline;gap:3px;">
-          <div class="font-mono" style="font-size:22px;font-weight:700;line-height:1;" id="wx-wind">--</div>
-          <div style="font-size:10px;color:var(--text-muted);" id="wx-wind-unit">kn</div>
-        </div>
+        <div class="font-mono" style="font-size:22px;font-weight:700;line-height:1;" id="wx-wind">--</div>
+        <div style="font-size:10px;color:var(--text-muted);" id="wx-wind-unit">kn</div>
       </div>
       <div>
         <div style="font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:2px;">Richtung</div>
-        <div style="display:flex;align-items:baseline;gap:3px;">
-          <div class="font-mono" style="font-size:22px;font-weight:700;line-height:1;" id="wx-dir">--</div>
-          <div style="font-size:10px;color:var(--text-muted);">°</div>
-        </div>
+        <div class="font-mono" style="font-size:22px;font-weight:700;line-height:1;" id="wx-dir">--</div>
+        <div style="font-size:10px;color:var(--text-muted);">°</div>
       </div>
       <div>
-        <div style="font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:2px;">Wellen</div>
-        <div style="display:flex;align-items:baseline;gap:3px;">
-          <div class="font-mono" style="font-size:22px;font-weight:700;line-height:1;" id="wx-wave">--</div>
-          <div style="font-size:10px;color:var(--text-muted);">m</div>
-        </div>
+        <div style="font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:2px;">Temp</div>
+        <div class="font-mono" style="font-size:22px;font-weight:700;line-height:1;" id="wx-temp">--</div>
+        <div style="font-size:10px;color:var(--text-muted);" id="wx-desc">°C</div>
       </div>
     </div>
   </div>
@@ -620,6 +572,81 @@ function toast(msg, dur=3000) {
   t._tid = setTimeout(() => t.style.display = 'none', dur);
 }
 
+// ── TAG / NACHT ───────────────────────────────────────────────────────────────
+function toggleTheme() {
+  const day = document.body.classList.toggle('day-mode');
+  const btn = document.getElementById('theme-toggle');
+  if (btn) btn.textContent = day ? '🌙' : '☀️';
+  // Leaflet-Kacheln brauchen keinen Wechsel, map re-renders on next interaction
+  localStorage.setItem('theme', day ? 'day' : 'night');
+}
+
+// Theme beim Start wiederherstellen
+(function() {
+  if (localStorage.getItem('theme') === 'day') {
+    document.body.classList.add('day-mode');
+    const btn = document.getElementById('theme-toggle');
+    if (btn) btn.textContent = '🌙';
+  }
+})();
+
+// ── GPX EXPORT ────────────────────────────────────────────────────────────────
+function exportGPX(idx) {
+  const logs = JSON.parse(localStorage.getItem('boat_logs') || '[]');
+  const trip = logs[idx]; if (!trip) return;
+
+  const pts = trip.route || [];
+  if (!pts.length) { showToast('Keine GPS-Punkte vorhanden'); return; }
+
+  const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const startIso = new Date(trip.start).toISOString();
+  const name = esc(trip.name || 'Fahrt');
+
+  // Waypoints aus Ereignissen
+  const wpts = (trip.events || []).filter(e => e.lat && e.lng).map(e => `  <wpt lat="${e.lat.toFixed(6)}" lon="${e.lng.toFixed(6)}">
+    <name>${esc(e.type)} ${esc(e.note||'')}</name>
+    <time>${new Date(e.ts||trip.start).toISOString()}</time>
+  </wpt>`).join('
+');
+
+  // Track-Punkte
+  const trkpts = pts.map(p => {
+    const t = p.ts ? new Date(p.ts).toISOString() : startIso;
+    return `      <trkpt lat="${p.lat.toFixed(6)}" lon="${p.lng.toFixed(6)}">
+        <time>${t}</time>
+      </trkpt>`;
+  }).join('
+');
+
+  const gpx = `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Glass Cockpit Logbuch"
+  xmlns="http://www.topografix.com/GPX/1/1"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">
+  <metadata>
+    <name>${name}</name>
+    <time>${startIso}</time>
+  </metadata>
+${wpts}
+  <trk>
+    <name>${name}</name>
+    <trkseg>
+${trkpts}
+    </trkseg>
+  </trk>
+</gpx>`;
+
+  // Download
+  const blob = new Blob([gpx], { type: 'application/gpx+xml' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url;
+  a.download = `${trip.name||'fahrt'}_${new Date(trip.start).toISOString().slice(0,10)}.gpx`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('GPX exportiert ✓');
+}
+
 function switchTab(id) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
@@ -654,7 +681,6 @@ function initMap() {
     attribution: '© OpenSeaMap', maxZoom: 18
   }).addTo(myMap);
 }
-
 
 // ── GPS ───────────────────────────────────────────────────────────────────────
 function startGps() {
@@ -1362,52 +1388,54 @@ function renderPegelData(data, showTides) {
   const globalRange= globalMax - globalMin;
   const dynThr     = Math.min(15, Math.max(3, globalRange * 0.02));
 
-  // ── Maritime 3-Stufen-Trend: Flut · Kentert · Ebbe ──────────────────────
-  // Keine "Stabil"-Anzeige mehr — entspricht maritimer Praxis.
-  // Kentert = Stauwasser: kurze Ruhephase um HW/NW, vom Modell bestimmt.
-  // Flut / Ebbe = Messdaten entscheiden (Hysterese via dynThr).
+  // ── Trend-Erkennung ──────────────────────────────────────────────────────
+  // PRIMÄR: Direktvergleich der letzten 2 Messwerte (ungesmoothed raw)
+  // → reagiert sofort wenn Pegel dreht, kein Smoothing-Verzug
+  const rawLast  = raw[raw.length - 1];
+  const rawPrev  = raw[raw.length - 2] ?? rawLast;
+  const rawDelta = rawLast - rawPrev;  // Δ zwischen letzten zwei Messungen
 
+  // SEKUNDÄR: Mittelfristige Richtung (letzten 3 rohe Werte)
+  // Filtert kurze Messschwankungen (Wellen, ±1-2cm Rauschen)
+  const raw3 = raw.slice(-3);
+  const midDelta = raw3[raw3.length-1] - raw3[0];  // Δ über ~10-15 min
+
+  // Kentert-Fenster: ±15min um den nächsten Extrempunkt
+  const KENTERT_MS  = 15 * 60000;
+  const modelEx15   = showTides && _tidalModel.amplitude !== null
+    ? _nextExtremum(Date.now()) : null;
+  const nearPeak15  = modelEx15 && Math.abs(modelEx15.ts - Date.now()) < KENTERT_MS;
+
+  // Peak-Erkennung auf rohen Daten (letzter Punkt ist lokales Maximum/Minimum)
   const last3s   = tail8.slice(-3);
   const isPeak   = last3s[1] >= last3s[0] && last3s[1] >= last3s[2];
   const isTrough = last3s[1] <= last3s[0] && last3s[1] <= last3s[2];
-  const wasRising  = longDelta >  dynThr * 2;
-  const wasFalling = longDelta < -dynThr * 2;
-  const nowSlowing = Math.abs(shortDelta) < dynThr;
-  const nearTurn   = (wasRising || wasFalling) && nowSlowing;
-  const atTurning  = showTides && (isPeak || isTrough || nearTurn);
+  const atTurning = showTides && (nearPeak15 || isPeak || isTrough);
 
-  // Modell: Totzone ±15min → Kentert erzwingen
-  const modelNextEx = showTides && _tidalModel.amplitude !== null
-    ? _nextExtremum(Date.now()) : null;
-  const inModelTotzone = modelNextEx
-    && Math.abs(modelNextEx.ts - Date.now()) < 15 * 60000;
-
-  // Entscheidungsbaum (Single Source of Truth)
-  let trendSym, trendColor, trendTxt;
-
-  if (showTides && (atTurning || inModelTotzone)) {
-    // Kentert: Stauwasser — Modell oder Sensor erkennen Ruhephase
-    trendSym = '↔'; trendColor = '#f59e0b'; trendTxt = 'Kentert';
-  } else if (longDelta > dynThr || shortDelta > dynThr) {
-    // Flut: Pegel steigt messbar
-    trendSym = '↑'; trendColor = '#34d399'; trendTxt = 'Flut';
-  } else if (longDelta < -dynThr || shortDelta < -dynThr) {
-    // Ebbe: Pegel fällt messbar
-    trendSym = '↓'; trendColor = '#f87171'; trendTxt = 'Ebbe';
+  if (atTurning) {
+    trendEl.innerText='↔'; trendEl.style.color='#f59e0b'; trendLbl.innerText='Kentert';
+  } else if (rawDelta > dynThr || (rawDelta > 0 && midDelta > dynThr)) {
+    // Pegel steigt: direkter Messwert bestätigt durch mittelfristige Richtung
+    trendEl.innerText='↑'; trendEl.style.color='#34d399';
+    trendLbl.innerText = showTides ? 'Flut' : 'Steigend';
+  } else if (rawDelta < -dynThr || (rawDelta < 0 && midDelta < -dynThr)) {
+    // Pegel fällt: direkter Messwert bestätigt durch mittelfristige Richtung
+    trendEl.innerText='↓'; trendEl.style.color='#f87171';
+    trendLbl.innerText = showTides ? 'Ebbe' : 'Fallend';
+  } else if (midDelta > dynThr) {
+    trendEl.innerText='↑'; trendEl.style.color='#34d399';
+    trendLbl.innerText = showTides ? 'Flut' : 'Steigend';
+  } else if (midDelta < -dynThr) {
+    trendEl.innerText='↓'; trendEl.style.color='#f87171';
+    trendLbl.innerText = showTides ? 'Ebbe' : 'Fallend';
   } else if (showTides) {
-    // Grauzone bei Gezeiten: noch kein klares Signal → Kentert
-    // (besser als falsches Flut/Ebbe in der Beschleunigungsphase)
-    trendSym = '↔'; trendColor = '#f59e0b'; trendTxt = 'Kentert';
+    // Grauzone: Bewegung unter Schwellenwert → Vorzeichen entscheidet
+    trendEl.innerText = midDelta >= 0 ? '↑' : '↓';
+    trendEl.style.color = midDelta >= 0 ? '#34d399' : '#f87171';
+    trendLbl.innerText  = midDelta >= 0 ? 'Flut' : 'Ebbe';
   } else {
-    // Binnengewässer ohne Tidenhub: nur Richtung zeigen
-    trendSym = longDelta >= 0 ? '↑' : '↓';
-    trendColor = longDelta >= 0 ? '#34d399' : '#f87171';
-    trendTxt  = longDelta >= 0 ? 'Steigend' : 'Fallend';
+    trendEl.innerText='→'; trendEl.style.color='#94a3b8'; trendLbl.innerText='Stabil';
   }
-
-  trendEl.innerText      = trendSym;
-  trendEl.style.color    = trendColor;
-  trendLbl.innerText     = trendTxt;
 
   // ── Inland / kein Tidenhub ────────────────────────────────────────────────
   const nextTypeEl = document.getElementById('pegel-next-type');
@@ -1503,13 +1531,12 @@ function renderPegelData(data, showTides) {
     }
   }
 
-  // ── Totzone-Check: ±15min um nächsten Extrempunkt ──────────────────────────
-  const DEAD_ZONE_MS = 15 * 60000;
-  const distToNext   = nextTs ? Math.abs(nextTs - Date.now()) : Infinity;
-  const inDeadZone   = distToNext < DEAD_ZONE_MS;
+  // ── Totzone ±15min — Zeitanzeige + Trend-Override ───────────────────────────
+  // Gleiches Fenster wie atTurning oben: 30 Min Stauwasser total
+  const distToNext = nextTs ? Math.abs(nextTs - Date.now()) : Infinity;
+  const inDeadZone = distToNext < KENTERT_MS;  // KENTERT_MS = 15 * 60000
 
-  // Trend-Symbol-Fix (Punkt 3): In Totzone immer ↔ erzwingen
-  // Verhindert widersprüchliche Kombination ↑ + "1 Min bis HW"
+  // In Totzone immer ↔ erzwingen (Single Source of Truth mit atTurning)
   if (inDeadZone && showTides) {
     trendEl.innerText = '↔'; trendEl.style.color = '#f59e0b'; trendLbl.innerText = 'Kentert';
   }
@@ -1551,185 +1578,39 @@ function fmtTide(ts){
   return(d.toLocaleDateString()===today?'':'Gestern ')+d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
 }
 
-// ── MARITIME INTELLIGENCE MODULE ──────────────────────────────────────────────
-
-// Schwellenwerte (KVR-orientiert)
-const KVR_WIND_AMBER = 20;  // kn → Amber
-const KVR_WIND_RED   = 34;  // kn → Rot (Stärke 8 Beaufort)
-const KVR_WAVE_AMBER = 1.5; // m  → Amber
-const KVR_WAVE_RED   = 3.0; // m  → Rot
-
-// Icon-Set: valide SF-Symbol-Pfade, opacity=0.4 für Hintergrundelemente
-const weatherIcons = {
-  'clear-day': `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32l1.41 1.41M2 12h2m16 0h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>`,
-  'clear-night': `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>`,
-  'partly-cloudy-day': `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="3" opacity="0.4"/><path opacity="0.4" d="M10 4v1.5M10 14.5V16M4 10h1.5M14.5 10H16M5.64 5.64l1.06 1.06M13.3 13.3l1.06 1.06"/><path d="M17.5 21h-9a4.5 4.5 0 0 1-.5-8.97A5.5 5.5 0 0 1 17.5 21z"/></svg>`,
-  'partly-cloudy-night': `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path opacity="0.4" d="M9 3a5 5 0 0 0 5 5 4 4 0 0 1-5-5Z"/><path d="M17.5 21h-9a4.5 4.5 0 0 1-.5-8.97A5.5 5.5 0 0 1 17.5 21z"/></svg>`,
-  'cloudy': `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 21h-9a4.5 4.5 0 0 1-.5-8.97A5.5 5.5 0 0 1 17.5 21z"/></svg>`,
-  'overcast': `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 17.58A5 5 0 0 0 18 8h-1.26A8 8 0 1 0 4 15.25"/><path d="M16 22H6a4 4 0 0 1 0-8h12a3 3 0 0 1 0 6z"/></svg>`,
-  'drizzle': `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19h-9a4.5 4.5 0 0 1-.5-8.97A5.5 5.5 0 0 1 17.5 19z"/><path d="M8 21v1M12 21v1M16 21v1"/></svg>`,
-  'rain': `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19h-9a4.5 4.5 0 0 1-.5-8.97A5.5 5.5 0 0 1 17.5 19z"/><path d="M8 20l-1 3M12 20l-1 3M16 20l-1 3"/></svg>`,
-  'heavy-rain': `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19h-9a4.5 4.5 0 0 1-.5-8.97A5.5 5.5 0 0 1 17.5 19z"/><path d="M7 20l-1.5 3M11 20l-1.5 3M15 20l-1.5 3M19 20l-1.5 3"/></svg>`,
-  'snow': `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19h-9a4.5 4.5 0 0 1-.5-8.97A5.5 5.5 0 0 1 17.5 19z"/><path d="M8 21v2M8 22h-1.5M8 22h1.5M14 21v2M14 22h-1.5M14 22h1.5"/></svg>`,
-  'sleet': `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19h-9a4.5 4.5 0 0 1-.5-8.97A5.5 5.5 0 0 1 17.5 19z"/><path d="M8 20l-0.5 2M12 20l-0.5 2M16 20l-0.5 2"/><circle cx="7.5" cy="23" r="0.75" fill="currentColor" stroke="none"/><circle cx="11.5" cy="23" r="0.75" fill="currentColor" stroke="none"/><circle cx="15.5" cy="23" r="0.75" fill="currentColor" stroke="none"/></svg>`,
-  'thunderstorm': `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19h-9a4.5 4.5 0 0 1-.5-8.97A5.5 5.5 0 0 1 17.5 19z"/><polyline points="13,19 10.5,23 13.5,23 10,27" stroke="#f59e0b" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
-  'fog': `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h16M4 12h16M4 16h16M7 20h10"/></svg>`,
-  'mist': `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 8h14M3 12h18M5 16h14M7 20h10"/></svg>`,
-  'wind': `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17.7 7.7a2.5 2.5 0 1 1 1.8 4.3H2M9.6 4.6A2 2 0 1 1 11 8H2M12.6 19.4A2 2 0 1 0 14 16H2"/></svg>`,
-  'wave': `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12c1-2 2-3 4-3s3 2 5 2 3-2 5-2 3 1 4 3"/><path d="M2 17c1-2 2-3 4-3s3 2 5 2 3-2 5-2 3 1 4 3" opacity="0.5"/></svg>`,
-  'warning-amber': `<svg viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`,
-  'warning-red': `<svg viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`,
-  'unknown': `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`,
-};
-
-// WMO-Code → {key, label, sub}
-function _wxMap(code, isDay) {
-  const n = isDay ? 'day' : 'night';
-  if (code===0)  return {k:`clear-${n}`,         l:'Klar',             s:isDay?'Klarer Himmel':'Klare Nacht'};
-  if (code===1)  return {k:`partly-cloudy-${n}`, l:'Überwiegend klar', s:'Vereinzelt Wolken'};
-  if (code===2)  return {k:`partly-cloudy-${n}`, l:'Teilweise bewölkt',s:'Wechselnd bewölkt'};
-  if (code===3)  return {k:'overcast',            l:'Bedeckt',          s:'Stark bewölkt'};
-  if (code<=29)  return {k:'mist',               l:'Dunst',            s:'Eingeschränkte Sicht'};
-  if (code<=49)  return {k:'fog',                l:'Nebel',            s:'Dichter Nebel'};
-  if (code<=55)  return {k:'drizzle',            l:'Nieselregen',      s:'Leichter Sprühregen'};
-  if (code<=59)  return {k:'drizzle',            l:'Starker Niesel',   s:'Mäßiger Sprühregen'};
-  if (code<=63)  return {k:'rain',               l:'Regen',            s:'Leichter bis mäßiger Regen'};
-  if (code<=65)  return {k:'heavy-rain',         l:'Starker Regen',    s:'Ergiebiger Dauerregen'};
-  if (code<=69)  return {k:'sleet',              l:'Eisregen',         s:'Schneeregen'};
-  if (code<=75)  return {k:'snow',               l:'Schneefall',       s:'Leichter bis mäßiger Schnee'};
-  if (code<=79)  return {k:'snow',               l:'Schneetreiben',    s:'Schneegriesel'};
-  if (code<=82)  return {k:'rain',               l:'Regenschauer',     s:'Schauerartige Regenfälle'};
-  if (code<=84)  return {k:'heavy-rain',         l:'Starke Schauer',   s:'Kräftige Regenschauer'};
-  if (code<=86)  return {k:'snow',               l:'Schneeschauer',    s:'Schauerartige Schneefälle'};
-  if (code<=89)  return {k:'sleet',              l:'Hagelschauer',     s:'Hagel möglich'};
-  if (code<=95)  return {k:'thunderstorm',       l:'Gewitter',         s:'Blitz und Donner'};
-  if (code<=99)  return {k:'thunderstorm',       l:'Unwetter',         s:'Schweres Gewitter'};
-  return                {k:'unknown',            l:'Unbekannt',        s:''};
-}
-
-// Beaufort-Skala
-function _beaufort(kn) {
-  if (kn<1)  return {bf:0, desc:'Windstille'};
-  if (kn<4)  return {bf:1, desc:'Leiser Zug'};
-  if (kn<7)  return {bf:2, desc:'Leichte Brise'};
-  if (kn<11) return {bf:3, desc:'Schwache Brise'};
-  if (kn<16) return {bf:4, desc:'Mäßige Brise'};
-  if (kn<22) return {bf:5, desc:'Frische Brise'};
-  if (kn<28) return {bf:6, desc:'Starker Wind'};
-  if (kn<34) return {bf:7, desc:'Steifer Wind'};
-  if (kn<41) return {bf:8, desc:'Stürmischer Wind'};
-  if (kn<48) return {bf:9, desc:'Sturm'};
-  if (kn<56) return {bf:10,desc:'Schwerer Sturm'};
-  if (kn<64) return {bf:11,desc:'Orkanartiger Sturm'};
-  return            {bf:12,desc:'Orkan'};
-}
-
-// Safety Banner: zeige/verberge
-function _showBanner(level, msg, detail, iconKey) {
-  const b = document.getElementById('safety-banner');
-  if (!b) return;
-  document.getElementById('banner-icon').innerHTML = weatherIcons[iconKey] || '';
-  document.getElementById('banner-icon').style.color = level==='red' ? '#ef4444' : '#f59e0b';
-  document.getElementById('banner-level').innerText  = level==='red' ? '⚠ ACHTUNG' : '▲ HINWEIS';
-  document.getElementById('banner-msg').innerText    = msg;
-  document.getElementById('banner-detail').innerText = detail;
-  b.className = `show ${level}`;
-}
-function _hideBanner() {
-  const b = document.getElementById('safety-banner');
-  if (b) b.className = '';
-}
-
-// Safety-Check aus Wetter + Wellen
-function _checkSafety(windKn, waveM, bf) {
-  if (windKn >= KVR_WIND_RED || waveM >= KVR_WAVE_RED) {
-    _showBanner('red',
-      `Sturmwarnung — ${bf.desc} (Bft ${bf.bf})`,
-      `Wind: ${windKn} kn  ·  Wellen: ${waveM >= 0 ? waveM.toFixed(1)+'m' : 'k.A.'}  ·  Ausfahrt nicht empfohlen`,
-      'warning-red');
-  } else if (windKn >= KVR_WIND_AMBER || waveM >= KVR_WAVE_AMBER) {
-    _showBanner('amber',
-      `Erhöhte Seegangslage — ${bf.desc} (Bft ${bf.bf})`,
-      `Wind: ${windKn} kn  ·  Wellen: ${waveM >= 0 ? waveM.toFixed(1)+'m' : 'k.A.'}  ·  Erhöhte Wachsamkeit`,
-      'warning-amber');
-  } else {
-    _hideBanner();
-  }
-}
-
-// wxCode: rückwärtskompatibel
-function wxCode(c) {
-  return _wxMap(c, new Date().getHours()>=6 && new Date().getHours()<21).l;
-}
-
-function openRadarMenu() { document.getElementById('radar-dialog').showModal(); }
-function openRadar(url)  { document.getElementById('radar-dialog').close(); window.open(url,'_blank'); }
-
+// ── WETTER ────────────────────────────────────────────────────────────────────
 async function fetchWeather(lat, lng) {
   try {
-    // Wetter + Marine parallel abrufen
-    const [rWx, rMarine] = await Promise.all([
-      fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,windspeed_10m,winddirection_10m,weathercode&wind_speed_unit=kn`),
-      fetch(`https://marine-api.open-meteo.com/v1/marine?latitude=${lat}&longitude=${lng}&hourly=wave_height&forecast_days=1&timezone=auto`).catch(()=>null),
-    ]);
-
-    const d  = await rWx.json();
-    const cc = d.current;
-    const code   = cc.weathercode;
-    const windKn = parseFloat(cc.windspeed_10m);
-    const isDay  = new Date().getHours()>=6 && new Date().getHours()<21;
-    const wx     = _wxMap(code, isDay);
-    const bf     = _beaufort(windKn);
-
-    // Wellenhöhe aus Marine-API
-    let waveM = -1;
-    if (rMarine) {
-      try {
-        const dm = await rMarine.json();
-        const hi = new Date().getHours();
-        waveM = dm.hourly?.wave_height?.[hi] ?? -1;
-      } catch(e){}
-    }
-
-    currentWeather = {
-      temp: cc.temperature_2m,
-      wind: windKn.toFixed(1),
-      windDir: cc.winddirection_10m,
-      desc: wx.l, ts: Date.now()
-    };
-
-    // ── DOM-Update in einem Rutsch ──────────────────────────────────────────
+    const url=`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,windspeed_10m,winddirection_10m,weathercode&wind_speed_unit=kn`;
+    const r=await fetch(url); const d=await r.json(); const cc=d.current;
+    currentWeather={temp:cc.temperature_2m,wind:parseFloat(cc.windspeed_10m).toFixed(1),windDir:cc.winddirection_10m,desc:wxCode(cc.weathercode),ts:Date.now()};
+    // Update weather tile
     document.getElementById('wx-wind').innerText = currentWeather.wind;
     document.getElementById('wx-dir').innerText  = currentWeather.windDir;
     document.getElementById('wx-temp').innerText = currentWeather.temp;
-    document.getElementById('wx-desc').innerText = wx.l;
+    document.getElementById('wx-desc').innerText = currentWeather.desc;
+  } catch(e){}
+}
 
-    const sub = document.getElementById('wx-desc-sub');
-    if (sub) sub.innerText = wx.s;
+function openRadarMenu() {
+  document.getElementById('radar-dialog').showModal();
+}
 
-    // Beaufort-Badge
-    const bfEl = document.getElementById('wx-beaufort');
-    if (bfEl) {
-      bfEl.innerText = `Bft ${bf.bf}`;
-      bfEl.style.display = 'block';
-      bfEl.style.color = bf.bf>=7?'#ef4444':bf.bf>=5?'#f59e0b':'var(--text-muted)';
-    }
+function openRadar(url) {
+  document.getElementById('radar-dialog').close();
+  window.open(url, '_blank');
+}
 
-    // Wellen
-    const waveEl = document.getElementById('wx-wave');
-    if (waveEl) waveEl.innerText = waveM>=0 ? waveM.toFixed(1) : '--';
-
-    // Icon injizieren (einmalig, kein Re-Parse)
-    const iconEl = document.getElementById('wx-icon');
-    if (iconEl) {
-      iconEl.innerHTML = weatherIcons[wx.k] || weatherIcons['unknown'];
-      const svg = iconEl.querySelector('svg');
-      if (svg) svg.style.cssText = 'width:42px;height:42px;display:block;';
-    }
-
-    // Safety-Check
-    _checkSafety(windKn, waveM, bf);
-  } catch(e){ console.warn('fetchWeather:', e); }
+function wxCode(c){
+  if(c===0) return 'Klar';
+  if(c<=3)  return 'Bewölkt';
+  if(c<=49) return 'Nebel';
+  if(c<=59) return 'Nieselregen';
+  if(c<=69) return 'Regen';
+  if(c<=79) return 'Schnee';
+  if(c<=84) return 'Schauer';
+  if(c<=99) return 'Gewitter';
+  return 'Unbekannt';
 }
 
 // ── LOG ───────────────────────────────────────────────────────────────────────
@@ -1746,12 +1627,18 @@ function renderLog() {
     if(l.end){const dur=Math.round((l.end-l.start)/60000);durStr=`${Math.floor(dur/60)}h ${dur%60}min`;}
     const crewStr=l.crew&&l.crew.length?l.crew.join(' · '):'Keine Crew';
     const evCount=l.events&&l.events.length?`<div style="font-size:11px;color:var(--text-muted);">📋 ${l.events.length} Ereignis${l.events.length!==1?'se':''}</div>`:'';
-    return `<div class="trip-card" onclick="exportTripPDF(${origIdx})">
-      <div class="font-bebas" style="color:var(--accent);font-size:20px;">${l.name}</div>
-      <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${fmtDate(l.start)} &nbsp;·&nbsp; ${l.dist} nm${durStr?' &nbsp;·&nbsp; '+durStr:''}</div>
-      <div style="font-size:11px;color:var(--text-muted);margin-top:3px;">👥 ${crewStr}</div>
-      ${evCount}
-      <div class="trip-card-hint">📄 Tippen für PDF Export</div>
+    const hasGps = l.route && l.route.length > 0;
+    return `<div class="trip-card">
+      <div onclick="exportTripPDF(${origIdx})" style="cursor:pointer;">
+        <div class="font-bebas" style="color:var(--accent);font-size:20px;">${l.name}</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${fmtDate(l.start)} &nbsp;·&nbsp; ${l.dist} nm${durStr?' &nbsp;·&nbsp; '+durStr:''}</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:3px;">👥 ${crewStr}</div>
+        ${evCount}
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px;">
+        <button onclick="exportTripPDF(${origIdx})" style="flex:1;background:rgba(56,189,248,0.1);border:1px solid var(--tile-border);color:var(--accent);border-radius:8px;padding:7px 0;font-size:11px;font-weight:600;cursor:pointer;">📄 PDF</button>
+        ${hasGps ? `<button onclick="exportGPX(${origIdx})" style="flex:1;background:rgba(52,211,153,0.1);border:1px solid rgba(52,211,153,0.3);color:#34d399;border-radius:8px;padding:7px 0;font-size:11px;font-weight:600;cursor:pointer;">🗺 GPX</button>` : ''}
+      </div>
     </div>`;
   }).join('');
 }
