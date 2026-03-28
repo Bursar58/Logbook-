@@ -57,17 +57,7 @@
   /* Smooth transition beim Wechsel */
   body, body * { transition: background-color 0.3s ease, color 0.2s ease, border-color 0.3s ease; }
 
-  /* Toggle-Button — inline im Header, kein fixed */
-  #theme-toggle {
-    width: 34px; height: 34px; border-radius: 50%;
-    background: var(--tile-bg); border: 1px solid var(--tile-border);
-    backdrop-filter: blur(12px); cursor: pointer;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 16px; color: var(--text-primary);
-    flex-shrink: 0;
-    transition: transform 0.2s ease;
-  }
-  #theme-toggle:active { transform: scale(0.9); }
+
 
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   body {
@@ -252,11 +242,43 @@
   #revert-bar.show { display: flex; }
   .revert-progress { flex: 1; height: 4px; background: rgba(245,158,11,0.2); border-radius: 2px; overflow: hidden; }
   .revert-fill { height: 100%; background: #f59e0b; border-radius: 2px; transition: width 1s linear; width: 100%; }
+
+  /* ── Maritime Intelligence: Safety Banner ──────────────────────────── */
+  @keyframes slideDown { from{transform:translateY(-100%);opacity:0} to{transform:translateY(0);opacity:1} }
+  @keyframes pulse-red { 0%,100%{box-shadow:0 4px 24px rgba(239,68,68,0.3)} 50%{box-shadow:0 4px 40px rgba(239,68,68,0.7)} }
+  #safety-banner {
+    position:fixed;top:0;left:0;right:0;z-index:9999;
+    backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+    border-bottom:1px solid rgba(255,255,255,0.1);
+    padding:12px 16px;display:none;flex-direction:column;gap:6px;
+    animation:slideDown 0.4s cubic-bezier(0.16,1,0.3,1);
+  }
+  #safety-banner.amber{background:rgba(245,158,11,0.18);border-bottom-color:rgba(245,158,11,0.4);}
+  #safety-banner.red{background:rgba(239,68,68,0.2);border-bottom-color:rgba(239,68,68,0.5);animation:slideDown 0.4s cubic-bezier(0.16,1,0.3,1),pulse-red 2s ease-in-out infinite;}
+  #safety-banner.show{display:flex;}
+  .banner-row{display:flex;align-items:center;justify-content:space-between;}
+  .banner-msg{font-size:13px;font-weight:600;line-height:1.3;}
+  .banner-detail{font-size:11px;opacity:0.75;}
+  .banner-close{width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,0.1);border:none;cursor:pointer;color:#f1f5f9;font-size:14px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  #wx-icon svg{width:42px;height:42px;display:block;}
 </style>
 </head>
 <body>
 
 <div id="toast"></div>
+<div id="safety-banner">
+  <div class="banner-row">
+    <div style="display:flex;align-items:center;gap:8px;">
+      <div id="banner-icon" style="width:22px;height:22px;flex-shrink:0;"></div>
+      <div>
+        <div id="banner-level" style="font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;opacity:0.7;">Warnung</div>
+        <div id="banner-msg" class="banner-msg">--</div>
+      </div>
+    </div>
+    <button class="banner-close" onclick="_hideBanner()">✕</button>
+  </div>
+  <div id="banner-detail" class="banner-detail"></div>
+</div>
 <div id="pdf-overlay">
   <div class="spinner"></div>
   <div style="color:var(--accent);font-size:14px;font-family:'Inter',sans-serif;">PDF wird erstellt…</div>
@@ -335,6 +357,9 @@
     </button>
     <button class="btn-primary" style="background:rgba(129,140,248,0.15);color:var(--accent2);border:1px solid rgba(129,140,248,0.3);text-align:left;padding:12px 16px;" onclick="openRadar('https://www.windy.com/?waves,53.5,10.0,9')">
       🌊 Windy — Seegang & Wellen
+    </button>
+    <button class="btn-primary" style="background:rgba(56,189,248,0.15);color:var(--accent);border:1px solid var(--tile-border);text-align:left;padding:12px 16px;" onclick="openRadar('https://www.rainviewer.com/map.html?loc=53.55,9.99,8&oFa=0&oC=0&oU=0&oCS=1&oF=0&oAP=1&rmt=4&ext=1')">
+      🛰 RainViewer — Animiertes Niederschlagsradar
     </button>
   </div>
   <button class="btn-secondary" style="margin-top:10px;" onclick="document.getElementById('radar-dialog').close()">Schließen</button>
@@ -416,12 +441,9 @@
       <div class="font-bebas" style="font-size:24px; color:var(--accent); line-height:1;" id="dash-title">System Ready</div>
       <div id="vessel-header" style="font-size:11px;color:var(--text-muted);margin-top:2px;display:none;"></div>
     </div>
-    <div style="display:flex;align-items:center;gap:8px;">
-      <button id="theme-toggle" onclick="toggleTheme()" title="Tag/Nacht">🌙</button>
-      <button onclick="openVessel()" style="background:rgba(56,189,248,0.08);border:1px solid var(--tile-border);color:var(--text-muted);border-radius:10px;padding:5px 10px;font-size:10px;font-weight:600;cursor:pointer;letter-spacing:0.5px;">
-        ⚙ SCHIFF
-      </button>
-    </div>
+    <button onclick="openVessel()" style="background:rgba(56,189,248,0.08);border:1px solid var(--tile-border);color:var(--text-muted);border-radius:10px;padding:5px 10px;font-size:10px;font-weight:600;cursor:pointer;letter-spacing:0.5px;">
+      ⚙ SCHIFF
+    </button>
   </div>
 
   <div class="glass-tile" style="margin-bottom:12px;">
@@ -479,27 +501,47 @@
     </div>
   </div>
 
-  <!-- WETTER TILE -->
+  <!-- WETTER TILE + Maritime Intelligence -->
   <div class="glass-tile" style="margin-top:12px;" id="weather-tile">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
       <span class="label">Wetter</span>
-      <button onclick="openRadarMenu()" style="background:rgba(56,189,248,0.1);border:1px solid var(--tile-border);color:var(--accent);border-radius:8px;padding:3px 10px;font-size:10px;font-weight:600;cursor:pointer;letter-spacing:0.5px;">RADAR ▾</button>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <div id="wx-beaufort" style="font-size:10px;font-weight:700;color:var(--text-muted);display:none;"></div>
+        <button onclick="openRadarMenu()" style="background:rgba(56,189,248,0.1);border:1px solid var(--tile-border);color:var(--accent);border-radius:8px;padding:3px 10px;font-size:10px;font-weight:600;cursor:pointer;letter-spacing:0.5px;">RADAR ▾</button>
+      </div>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+      <div id="wx-icon" style="width:42px;height:42px;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#f8fafc;filter:drop-shadow(0 0 8px rgba(255,255,255,0.25));"></div>
+      <div style="flex:1;min-width:0;">
+        <div id="wx-desc" style="font-size:14px;font-weight:600;color:#f8fafc;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">--</div>
+        <div id="wx-desc-sub" style="font-size:10px;color:var(--text-muted);margin-top:2px;"></div>
+      </div>
+      <div style="flex-shrink:0;text-align:right;">
+        <div class="font-mono" style="font-size:30px;font-weight:700;line-height:1;" id="wx-temp">--</div>
+        <div style="font-size:10px;color:var(--text-muted);">°C</div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;border-top:1px solid rgba(56,189,248,0.12);padding-top:8px;">
       <div>
         <div style="font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:2px;">Wind</div>
-        <div class="font-mono" style="font-size:22px;font-weight:700;line-height:1;" id="wx-wind">--</div>
-        <div style="font-size:10px;color:var(--text-muted);" id="wx-wind-unit">kn</div>
+        <div style="display:flex;align-items:baseline;gap:3px;">
+          <div class="font-mono" style="font-size:22px;font-weight:700;line-height:1;" id="wx-wind">--</div>
+          <div style="font-size:10px;color:var(--text-muted);" id="wx-wind-unit">kn</div>
+        </div>
       </div>
       <div>
         <div style="font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:2px;">Richtung</div>
-        <div class="font-mono" style="font-size:22px;font-weight:700;line-height:1;" id="wx-dir">--</div>
-        <div style="font-size:10px;color:var(--text-muted);">°</div>
+        <div style="display:flex;align-items:baseline;gap:3px;">
+          <div class="font-mono" style="font-size:22px;font-weight:700;line-height:1;" id="wx-dir">--</div>
+          <div style="font-size:10px;color:var(--text-muted);">°</div>
+        </div>
       </div>
       <div>
-        <div style="font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:2px;">Temp</div>
-        <div class="font-mono" style="font-size:22px;font-weight:700;line-height:1;" id="wx-temp">--</div>
-        <div style="font-size:10px;color:var(--text-muted);" id="wx-desc">°C</div>
+        <div style="font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:2px;">Wellen</div>
+        <div style="display:flex;align-items:baseline;gap:3px;">
+          <div class="font-mono" style="font-size:22px;font-weight:700;line-height:1;" id="wx-wave">--</div>
+          <div style="font-size:10px;color:var(--text-muted);">m</div>
+        </div>
       </div>
     </div>
   </div>
@@ -573,23 +615,7 @@ function toast(msg, dur=3000) {
   t._tid = setTimeout(() => t.style.display = 'none', dur);
 }
 
-// ── TAG / NACHT ───────────────────────────────────────────────────────────────
-function toggleTheme() {
-  const day = document.body.classList.toggle('day-mode');
-  const btn = document.getElementById('theme-toggle');
-  if (btn) btn.textContent = day ? '🌙' : '☀️';
-  // Leaflet-Kacheln brauchen keinen Wechsel, map re-renders on next interaction
-  localStorage.setItem('theme', day ? 'day' : 'night');
-}
-
-// Theme beim Start wiederherstellen
-(function() {
-  if (localStorage.getItem('theme') === 'day') {
-    document.body.classList.add('day-mode');
-    const btn = document.getElementById('theme-toggle');
-    if (btn) btn.textContent = '🌙';
-  }
-})();
+// ── TAG / NACHT (Toggle entfernt) ──────────────────────────────────────────
 
 // ── GPX EXPORT ────────────────────────────────────────────────────────────────
 function exportGPX(idx) {
@@ -688,20 +714,7 @@ function startGps() {
   if (!navigator.geolocation) {
     document.getElementById('pos-display').innerText = 'GPS nicht verfügbar'; return;
   }
-  // Suchanzeige mit Punktanimation
-  let _gpsSearchDots = 0;
-  const _gpsSearchTimer = setInterval(() => {
-    _gpsSearchDots = (_gpsSearchDots + 1) % 4;
-    const el = document.getElementById('pos-display');
-    if (el && el.innerText.startsWith('Suche')) {
-      el.innerText = 'Suche Satelliten' + '.'.repeat(_gpsSearchDots);
-    } else {
-      clearInterval(_gpsSearchTimer);
-    }
-  }, 600);
-
   watchId = navigator.geolocation.watchPosition(pos => {
-    clearInterval(_gpsSearchTimer);
     const { latitude, longitude, speed, heading } = pos.coords;
     const rawSpeed = speed || 0;
     const sog = formatSpeed(rawSpeed);
@@ -724,16 +737,12 @@ function startGps() {
     updateEnvironment(latitude, longitude);
     if (tripActive && trackingReady) handleSmartTracking(latitude, longitude, speed, heading);
   }, e => {
-    clearInterval(_gpsSearchTimer);
-    const msgs = { 1:'Zugriff verweigert — GPS-Berechtigung prüfen', 2:'Position nicht verfügbar', 3:'Timeout — GPS neu starten' };
-    document.getElementById('pos-display').innerText = msgs[e.code] || ('GPS-Fehler: ' + e.message);
-    // Retry nach 5s bei Timeout
-    if (e.code === 3) setTimeout(startGps, 5000);
-  }, {
-    enableHighAccuracy: true,
-    timeout: 15000,       // 15s statt 30s — schnellere Fehleranzeige
-    maximumAge: 10000,    // Cachet Position bis 10s — hilft bei kurzen Unterbrechungen
-  });
+    const msg = e.code === 1 ? 'GPS-Berechtigung verweigert'
+              : e.code === 2 ? 'Position nicht verfügbar'
+              : 'GPS Timeout — wird neu gestartet';
+    document.getElementById('pos-display').innerText = msg;
+    if (e.code !== 1) setTimeout(startGps, 5000); // retry ausser bei Verweigerung
+  }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 });
 }
 
 function handleSmartTracking(lat, lng, speed, heading) {
@@ -1600,39 +1609,111 @@ function fmtTide(ts){
   return(d.toLocaleDateString()===today?'':'Gestern ')+d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
 }
 
-// ── WETTER ────────────────────────────────────────────────────────────────────
+// ── MARITIME INTELLIGENCE MODULE ──────────────────────────────────────────────
+const KVR_WIND_AMBER=20, KVR_WIND_RED=34, KVR_WAVE_AMBER=1.5, KVR_WAVE_RED=3.0;
+
+const weatherIcons = {
+  'clear-day':`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32l1.41 1.41M2 12h2m16 0h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>`,
+  'clear-night':`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>`,
+  'partly-cloudy-day':`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="3" opacity="0.4"/><path opacity="0.4" d="M10 4v1.5M10 14.5V16M4 10h1.5M14.5 10H16M5.64 5.64l1.06 1.06M13.3 13.3l1.06 1.06"/><path d="M17.5 21h-9a4.5 4.5 0 0 1-.5-8.97A5.5 5.5 0 0 1 17.5 21z"/></svg>`,
+  'partly-cloudy-night':`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path opacity="0.4" d="M9 3a5 5 0 0 0 5 5 4 4 0 0 1-5-5Z"/><path d="M17.5 21h-9a4.5 4.5 0 0 1-.5-8.97A5.5 5.5 0 0 1 17.5 21z"/></svg>`,
+  'cloudy':`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 21h-9a4.5 4.5 0 0 1-.5-8.97A5.5 5.5 0 0 1 17.5 21z"/></svg>`,
+  'overcast':`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 17.58A5 5 0 0 0 18 8h-1.26A8 8 0 1 0 4 15.25"/><path d="M16 22H6a4 4 0 0 1 0-8h12a3 3 0 0 1 0 6z"/></svg>`,
+  'drizzle':`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19h-9a4.5 4.5 0 0 1-.5-8.97A5.5 5.5 0 0 1 17.5 19z"/><path d="M8 21v1M12 21v1M16 21v1"/></svg>`,
+  'rain':`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19h-9a4.5 4.5 0 0 1-.5-8.97A5.5 5.5 0 0 1 17.5 19z"/><path d="M8 20l-1 3M12 20l-1 3M16 20l-1 3"/></svg>`,
+  'heavy-rain':`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19h-9a4.5 4.5 0 0 1-.5-8.97A5.5 5.5 0 0 1 17.5 19z"/><path d="M7 20l-1.5 3M11 20l-1.5 3M15 20l-1.5 3M19 20l-1.5 3"/></svg>`,
+  'snow':`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19h-9a4.5 4.5 0 0 1-.5-8.97A5.5 5.5 0 0 1 17.5 19z"/><path d="M8 21v2M8 22h-1.5M8 22h1.5M14 21v2M14 22h-1.5M14 22h1.5"/></svg>`,
+  'thunderstorm':`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19h-9a4.5 4.5 0 0 1-.5-8.97A5.5 5.5 0 0 1 17.5 19z"/><polyline points="13,19 10.5,23 13.5,23 10,27" stroke="#f59e0b" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  'fog':`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h16M4 12h16M4 16h16M7 20h10"/></svg>`,
+  'wind':`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17.7 7.7a2.5 2.5 0 1 1 1.8 4.3H2M9.6 4.6A2 2 0 1 1 11 8H2M12.6 19.4A2 2 0 1 0 14 16H2"/></svg>`,
+  'warning-amber':`<svg viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`,
+  'warning-red':`<svg viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`,
+};
+
+function _wxMap(code, isDay) {
+  const n=isDay?'day':'night';
+  if(code===0)  return{k:`clear-${n}`,         l:'Klar',             s:isDay?'Klarer Himmel':'Klare Nacht'};
+  if(code===1)  return{k:`partly-cloudy-${n}`, l:'Überwiegend klar', s:'Vereinzelt Wolken'};
+  if(code===2)  return{k:`partly-cloudy-${n}`, l:'Teilweise bewölkt',s:'Wechselnd bewölkt'};
+  if(code===3)  return{k:'overcast',            l:'Bedeckt',          s:'Stark bewölkt'};
+  if(code<=29)  return{k:'fog',                l:'Dunst',            s:'Eingeschränkte Sicht'};
+  if(code<=49)  return{k:'fog',                l:'Nebel',            s:'Dichter Nebel'};
+  if(code<=55)  return{k:'drizzle',            l:'Nieselregen',      s:'Leichter Sprühregen'};
+  if(code<=59)  return{k:'drizzle',            l:'Starker Niesel',   s:'Mäßiger Sprühregen'};
+  if(code<=63)  return{k:'rain',               l:'Regen',            s:'Leichter Regen'};
+  if(code<=65)  return{k:'heavy-rain',         l:'Starker Regen',    s:'Ergiebiger Dauerregen'};
+  if(code<=75)  return{k:'snow',               l:'Schneefall',       s:'Leichter bis mäßiger Schnee'};
+  if(code<=82)  return{k:'rain',               l:'Regenschauer',     s:'Schauerartige Regenfälle'};
+  if(code<=86)  return{k:'snow',               l:'Schneeschauer',    s:'Schauerartige Schneefälle'};
+  if(code<=95)  return{k:'thunderstorm',       l:'Gewitter',         s:'Blitz und Donner'};
+  if(code<=99)  return{k:'thunderstorm',       l:'Unwetter',         s:'Schweres Gewitter'};
+  return               {k:'cloudy',            l:'Unbekannt',        s:''};
+}
+
+function _beaufort(kn) {
+  if(kn<1)  return{bf:0,desc:'Windstille'};
+  if(kn<4)  return{bf:1,desc:'Leiser Zug'};
+  if(kn<7)  return{bf:2,desc:'Leichte Brise'};
+  if(kn<11) return{bf:3,desc:'Schwache Brise'};
+  if(kn<16) return{bf:4,desc:'Mäßige Brise'};
+  if(kn<22) return{bf:5,desc:'Frische Brise'};
+  if(kn<28) return{bf:6,desc:'Starker Wind'};
+  if(kn<34) return{bf:7,desc:'Steifer Wind'};
+  if(kn<41) return{bf:8,desc:'Stürmischer Wind'};
+  if(kn<48) return{bf:9,desc:'Sturm'};
+  if(kn<56) return{bf:10,desc:'Schwerer Sturm'};
+  if(kn<64) return{bf:11,desc:'Orkanartiger Sturm'};
+  return          {bf:12,desc:'Orkan'};
+}
+
+function _showBanner(level, msg, detail, iconKey) {
+  const b=document.getElementById('safety-banner'); if(!b) return;
+  document.getElementById('banner-icon').innerHTML = weatherIcons[iconKey]||'';
+  document.getElementById('banner-icon').style.color = level==='red'?'#ef4444':'#f59e0b';
+  document.getElementById('banner-level').innerText  = level==='red'?'⚠ ACHTUNG':'▲ HINWEIS';
+  document.getElementById('banner-msg').innerText    = msg;
+  document.getElementById('banner-detail').innerText = detail;
+  b.className = `show ${level}`;
+}
+function _hideBanner() { const b=document.getElementById('safety-banner'); if(b) b.className=''; }
+
+function _checkSafety(windKn, waveM, bf) {
+  if(windKn>=KVR_WIND_RED || waveM>=KVR_WAVE_RED)
+    _showBanner('red',`Sturmwarnung — ${bf.desc} (Bft ${bf.bf})`,`Wind: ${windKn}kn  ·  Wellen: ${waveM>=0?waveM.toFixed(1)+'m':'k.A.'}  ·  Ausfahrt nicht empfohlen`,'warning-red');
+  else if(windKn>=KVR_WIND_AMBER || waveM>=KVR_WAVE_AMBER)
+    _showBanner('amber',`Erhöhte Seegangslage — ${bf.desc} (Bft ${bf.bf})`,`Wind: ${windKn}kn  ·  Wellen: ${waveM>=0?waveM.toFixed(1)+'m':'k.A.'}  ·  Erhöhte Wachsamkeit`,'warning-amber');
+  else _hideBanner();
+}
+
+function wxCode(c){ return _wxMap(c, new Date().getHours()>=6&&new Date().getHours()<21).l; }
+function openRadarMenu(){ document.getElementById('radar-dialog').showModal(); }
+function openRadar(url){ document.getElementById('radar-dialog').close(); window.open(url,'_blank'); }
+
 async function fetchWeather(lat, lng) {
   try {
-    const url=`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,windspeed_10m,winddirection_10m,weathercode&wind_speed_unit=kn`;
-    const r=await fetch(url); const d=await r.json(); const cc=d.current;
-    currentWeather={temp:cc.temperature_2m,wind:parseFloat(cc.windspeed_10m).toFixed(1),windDir:cc.winddirection_10m,desc:wxCode(cc.weathercode),ts:Date.now()};
-    // Update weather tile
-    document.getElementById('wx-wind').innerText = currentWeather.wind;
-    document.getElementById('wx-dir').innerText  = currentWeather.windDir;
-    document.getElementById('wx-temp').innerText = currentWeather.temp;
-    document.getElementById('wx-desc').innerText = currentWeather.desc;
-  } catch(e){}
-}
-
-function openRadarMenu() {
-  document.getElementById('radar-dialog').showModal();
-}
-
-function openRadar(url) {
-  document.getElementById('radar-dialog').close();
-  window.open(url, '_blank');
-}
-
-function wxCode(c){
-  if(c===0) return 'Klar';
-  if(c<=3)  return 'Bewölkt';
-  if(c<=49) return 'Nebel';
-  if(c<=59) return 'Nieselregen';
-  if(c<=69) return 'Regen';
-  if(c<=79) return 'Schnee';
-  if(c<=84) return 'Schauer';
-  if(c<=99) return 'Gewitter';
-  return 'Unbekannt';
+    const [rWx, rMarine] = await Promise.all([
+      fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,windspeed_10m,winddirection_10m,weathercode&wind_speed_unit=kn`),
+      fetch(`https://marine-api.open-meteo.com/v1/marine?latitude=${lat}&longitude=${lng}&hourly=wave_height&forecast_days=1&timezone=auto`).catch(()=>null),
+    ]);
+    const d=await rWx.json(); const cc=d.current;
+    const code=cc.weathercode, windKn=parseFloat(cc.windspeed_10m);
+    const isDay=new Date().getHours()>=6&&new Date().getHours()<21;
+    const wx=_wxMap(code,isDay), bf=_beaufort(windKn);
+    let waveM=-1;
+    if(rMarine){try{const dm=await rMarine.json();waveM=dm.hourly?.wave_height?.[new Date().getHours()]??-1;}catch(e){}}
+    currentWeather={temp:cc.temperature_2m,wind:windKn.toFixed(1),windDir:cc.winddirection_10m,desc:wx.l,ts:Date.now()};
+    document.getElementById('wx-wind').innerText=currentWeather.wind;
+    document.getElementById('wx-dir').innerText=currentWeather.windDir;
+    document.getElementById('wx-temp').innerText=currentWeather.temp;
+    document.getElementById('wx-desc').innerText=wx.l;
+    const sub=document.getElementById('wx-desc-sub'); if(sub) sub.innerText=wx.s;
+    const bfEl=document.getElementById('wx-beaufort');
+    if(bfEl){bfEl.innerText=`Bft ${bf.bf}`;bfEl.style.display='block';bfEl.style.color=bf.bf>=7?'#ef4444':bf.bf>=5?'#f59e0b':'var(--text-muted)';}
+    const waveEl=document.getElementById('wx-wave'); if(waveEl) waveEl.innerText=waveM>=0?waveM.toFixed(1):'--';
+    const iconEl=document.getElementById('wx-icon');
+    if(iconEl){iconEl.innerHTML=weatherIcons[wx.k]||weatherIcons['cloudy'];const svg=iconEl.querySelector('svg');if(svg)svg.style.cssText='width:42px;height:42px;display:block;';}
+    _checkSafety(windKn,waveM,bf);
+  } catch(e){console.warn('fetchWeather:',e);}
 }
 
 // ── LOG ───────────────────────────────────────────────────────────────────────
@@ -2003,13 +2084,11 @@ function initFabDrag() {
 
   let dragging = false, startY = 0, startTop = 0;
 
-  // Restore saved position — sicher begrenzt auf sichtbaren Bereich
-  const savedTop = parseInt(localStorage.getItem('fab_top'));
-  const maxTop = window.innerHeight - 220;
-  if (savedTop && savedTop > 10 && savedTop < maxTop) {
-    group.style.top = savedTop + 'px';
+  // Restore saved position — NaN-safe, viewport-clamped
+  const _fabSaved = parseInt(localStorage.getItem('fab_top'));
+  if (!isNaN(_fabSaved) && _fabSaved >= 60 && _fabSaved < window.innerHeight - 200) {
+    group.style.top = _fabSaved + 'px';
   } else {
-    // Ungültiger oder fehlender Wert → sicher zurücksetzen
     group.style.top = '200px';
     localStorage.removeItem('fab_top');
   }
