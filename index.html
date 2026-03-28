@@ -716,35 +716,39 @@ const _rv = {
 
 async function initRainViewer() {
   try {
-    // RainViewer API: liefert alle verfügbaren Zeitstempel
     const res  = await fetch('https://api.rainviewer.com/public/weather-maps.json');
     const data = await res.json();
 
     // Letzten 10 Vergangenheits-Frames + ersten Nowcast-Frame
-    const past     = (data.radar?.past     || []).slice(-10);
-    const nowcast  = (data.radar?.nowcast  || []).slice(0, 1);
+    const past     = (data.radar?.past    || []).slice(-10);
+    const nowcast  = (data.radar?.nowcast || []).slice(0, 1);
     const allFrames = [...past, ...nowcast];
 
-    if (!allFrames.length) return;
+    if (!allFrames.length) { console.warn('RainViewer: keine Frames'); return; }
 
     _rv.timestamps = allFrames.map(f => f.time);
     _rv.host       = data.host;
     _rv.layers     = [];
 
-    // Alle Layer vorladen (verhindert Ruckler bei Animation)
+    // KORREKTES URL-Format (seit 2024): frame.path statt frame.time
+    // Max Zoom Level = 7 (RainViewer Limit) → minZoom/maxZoom setzen
+    // URL: {host}{path}/256/{z}/{x}/{y}/{colorScheme}/{options}.png
+    // options: {smooth}_{snow}  z.B. "1_1" = smoothed + snow
     for (const frame of allFrames) {
-      const url = `${data.host}/v2/radar/${frame.time}/{z}/{x}/{y}/2/${_rv.colorScheme}/1/1/0.png`;
+      const url = `${data.host}${frame.path}/256/{z}/{x}/{y}/${_rv.colorScheme}/1_1.png`;
       const layer = L.tileLayer(url, {
-        opacity:     0,        // zunächst unsichtbar
+        opacity:     0,
         tileSize:    256,
         zIndex:      100,
-        attribution: 'RainViewer',
+        minZoom:     0,
+        maxZoom:     7,       // RainViewer Hard-Limit
+        attribution: '© RainViewer',
       });
       _rv.layers.push(layer);
     }
 
     _rv.apiLoaded = true;
-    console.log(`RainViewer: ${allFrames.length} Frames geladen (${past.length} hist + ${nowcast.length} nowcast)`);
+    console.log(`RainViewer: ${allFrames.length} Frames (${past.length} hist + ${nowcast.length} nowcast)`);
 
   } catch(e) {
     console.warn('RainViewer init failed:', e);
@@ -795,44 +799,45 @@ function _updateRadarUI() {
 }
 
 function _showRadarFrame(idx) {
-  // Vorherigen Frame ausblenden, neuen einblenden
   _rv.layers.forEach((layer, i) => {
-    if (!myMap.hasLayer(layer) && i === idx) {
-      layer.addTo(myMap);
-    }
+    if (!myMap.hasLayer(layer) && i === idx) layer.addTo(myMap);
     layer.setOpacity(i === idx ? _rv.opacity : 0);
   });
   _rv.currentIdx = idx;
 
-  // Zeitstempel anzeigen
-  const ts    = _rv.timestamps[idx];
-  const now   = Math.floor(Date.now() / 1000);
-  const diff  = ts - now;
-  const dt    = new Date(ts * 1000);
-  const hhmm  = dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const ts   = _rv.timestamps[idx];
+  const diff = ts - Math.floor(Date.now() / 1000);
+  const hhmm = new Date(ts * 1000).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
+  const isForecast = diff > 60;
+
+  // Zoom-Warnung: RainViewer max Zoom = 7
+  const zoom    = myMap.getZoom();
+  const zoomOk  = zoom <= 7;
 
   const infoEl = document.getElementById('radar-time-info');
   if (infoEl) {
-    const isForecast = diff > 60;
-    const label = isForecast
-      ? `+${Math.round(diff/60)}min ▶ ${hhmm}`
-      : `${hhmm} ${isForecast ? '▶' : '●'}`;
-    infoEl.innerText     = label;
-    infoEl.style.color   = isForecast ? '#f59e0b' : '#f1f5f9';
-    infoEl.style.borderColor = isForecast
-      ? 'rgba(245,158,11,0.4)'
-      : 'rgba(56,189,248,0.2)';
+    if (!zoomOk) {
+      infoEl.innerText      = '⊖ Rauszoomen für Radar';
+      infoEl.style.color    = '#f59e0b';
+      infoEl.style.borderColor = 'rgba(245,158,11,0.4)';
+    } else {
+      infoEl.innerText      = isForecast ? `+${Math.round(diff/60)}min ▶ ${hhmm}` : `${hhmm} ●`;
+      infoEl.style.color    = isForecast ? '#f59e0b' : '#f1f5f9';
+      infoEl.style.borderColor = isForecast ? 'rgba(245,158,11,0.4)' : 'rgba(56,189,248,0.2)';
+    }
   }
 }
 
 function _startRadarAnimation() {
   if (!_rv.layers.length) return;
-  // Sofort ersten Frame zeigen
+  // RainViewer max zoom = 7 → automatisch rauszoomen wenn nötig
+  if (myMap.getZoom() > 7) {
+    myMap.setZoom(7);
+    showToast('Radar: Zoom auf Stufe 7 reduziert');
+  }
   _showRadarFrame(0);
-  // Loop: 600ms pro Frame
   _rv.animTimer = setInterval(() => {
-    const next = (_rv.currentIdx + 1) % _rv.layers.length;
-    _showRadarFrame(next);
+    _showRadarFrame((_rv.currentIdx + 1) % _rv.layers.length);
   }, 600);
 }
 
