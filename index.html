@@ -754,8 +754,10 @@ async function updateEnvironment(lat, lng) {
     fetchClosestPegel(lat, lng);
   } else if (isInAustrianWaters(lat, lng)) {
     fetchClosestEhyd(lat, lng);
+  } else if (isTidalWater(lat, lng)) {
+    fetchClosestNoaa(lat, lng);   // NOAA global tide stations
   } else {
-    fetchMarineTide(lat, lng);
+    fetchMarineTide(lat, lng);    // Open-Meteo model fallback
   }
 }
 
@@ -767,6 +769,59 @@ function isInGermanWaters(lat, lng) {
 function isInAustrianWaters(lat, lng) {
   // Austria bounding box
   return lat >= 46.3 && lat <= 49.1 && lng >= 9.5 && lng <= 17.2;
+}
+
+// Detect tidal waters by GPS position.
+// Uses explicit whitelist of coastal/tidal zones.
+// The tidal range check in renderPegelData (HW-NW < 30cm) acts as
+// a second safety net for edge cases.
+function isTidalWater(lat, lng) {
+
+  // ── INLAND EXCLUSIONS — checked first ────────────────────────────────────
+  // Baltic Sea + all eastern coasts (micro-tidal < 20cm)
+  if (lng >= 9.2  && lat >= 54.0 && lat <= 66.0) return false; // Baltic + Flensburg fjord
+  // German inland: Rhine, Mosel, Main, Elbe above Hamburg, Oder etc.
+  if (lng >= 6.0  && lng <= 15.5 && lat >= 47.5 && lat <= 53.0) return false; // German inland rivers (Rhein, Mosel, Main, Weser upper)
+  // Switzerland + Austria + inland Central Europe
+  if (lng >= 6.0  && lng <= 17.5 && lat >= 46.0 && lat <= 48.5) return false;
+
+  // ── TIDAL COASTAL ZONES ───────────────────────────────────────────────────
+  // Weser + Ems estuaries (tidal up to Bremen/Papenburg ~53.1N, lng 7-9)
+  if (lat >= 53.0 && lat <= 53.9 && lng >= 6.5 && lng <= 8.9)   return true; // Ems+Weser estuaries
+  // Elbe estuary (tidal up to Hamburg ~53.55N)
+  if (lat >= 53.4 && lat <= 54.0 && lng >= 8.8 && lng <= 10.0)  return true; // Elbe estuary
+  // German Bight / Wattenmeer — tight lng limit to exclude Kiel fjord area
+  if (lat >= 53.5 && lat <= 55.5 && lng >= 7.5 && lng <= 9.3)   return true; // North Sea Wattenmeer W
+  if (lat >= 54.2 && lat <= 55.5 && lng >= 8.0 && lng <= 9.1)   return true; // Nordfriesland/Sylt
+
+  // Netherlands: Wadden Sea, Rhine/Maas delta, Zeeland (tidal)
+  if (lat >= 51.2 && lat <= 53.6 && lng >= 3.0 && lng <= 7.0)   return true;
+
+  // Belgium coast
+  if (lat >= 50.6 && lat <= 51.4 && lng >= 2.4 && lng <= 3.5)   return true;
+
+  // France Atlantic coast + English Channel
+  if (lat >= 43.0 && lat <= 51.5 && lng >= -5.5 && lng <= 3.0)  return true;
+
+  // British Isles
+  if (lat >= 49.5 && lat <= 61.0 && lng >= -9.0 && lng <= 2.0)  return true;
+
+  // Open North Sea / Atlantic (offshore, no land)
+  if (lat >= 48.0 && lat <= 62.0 && lng >= -12.0 && lng <= 6.5) return true;
+
+  // ── GLOBAL CATCH-ALL ─────────────────────────────────────────────────────
+  // Outside Europe: assume tidal for all coastal/ocean positions.
+  // The HW-NW range check in renderPegelData catches non-tidal inland water.
+
+  // Known landlocked / far-from-coast exclusions:
+  if (lat >= 35.0 && lat <= 55.0 && lng >= 50.0 && lng <= 90.0) return false;  // Central Asia
+  if (lat >= -15.0 && lat <= 25.0 && lng >= 10.0 && lng <= 45.0) return false; // Sahara/inland Africa
+  if (lat >= -35.0 && lat <= -15.0 && lng >= 120.0 && lng <= 140.0) return false; // Central Australia
+  if (lat >= -15.0 && lat <= 5.0 && lng >= -75.0 && lng <= -45.0) return false;  // Amazon inland
+  if (lat >= 40.0 && lat <= 60.0 && lng >= -110.0 && lng <= -75.0) return false; // Central North America
+
+  // Everything else (coasts, islands, oceans worldwide) = tidal
+  return true;
 }
 
 // Find nearest Pegelonline station dynamically by GPS position
@@ -797,7 +852,7 @@ async function fetchClosestPegel(lat, lng) {
     const url = `https://www.pegelonline.wsv.de/webservices/rest-api/v2/stations/${closest.uuid}/W/measurements.json?start=P3D`;
     const r2 = await fetch(url); if(!r2.ok) throw 0;
     const data = await r2.json(); if(!data.length) return;
-    renderPegelData(data);
+    renderPegelData(data, isTidalWater(lat, lng));
   } catch(e) {
     document.getElementById('pegel-val').innerText = 'N/A';
     document.getElementById('pegel-station-label').innerText = 'Pegel — Fehler';
@@ -859,7 +914,7 @@ async function fetchClosestEhyd(lat, lng) {
       .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 
     if (!normalized.length) throw new Error('no AT data');
-    renderPegelData(normalized);
+    renderPegelData(normalized, false); // Austria: no tidal prediction
 
   } catch(e) {
     console.warn('eHYD error:', e.message);
@@ -869,53 +924,166 @@ async function fetchClosestEhyd(lat, lng) {
   }
 }
 
-// Fallback for international waters: Open-Meteo marine API
+// ── NOAA CO-OPS — Global tide stations (Asia, Pacific, Americas, Africa) ─────
+async function fetchClosestNoaa(lat, lng) {
+  try {
+    document.getElementById('pegel-station-label').innerText = 'NOAA — Suche Station…';
+
+    // Load full NOAA tide prediction station list (cached, ~420 stations worldwide)
+    if (!window._noaaStations) {
+      const r = await fetch(
+        'https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations.json?type=tidepredictions&units=metric'
+      );
+      if (!r.ok) throw new Error('NOAA station list failed');
+      const j = await r.json();
+      window._noaaStations = j.stationList || [];
+    }
+
+    // Find closest station by Haversine
+    let closest = null, minDist = Infinity;
+    window._noaaStations.forEach(s => {
+      if (s.lat && s.lng) {
+        const d = getDist(lat, lng, parseFloat(s.lat), parseFloat(s.lng));
+        if (d < minDist) { minDist = d; closest = s; }
+      }
+    });
+    if (!closest) throw new Error('no NOAA station found');
+
+    const distKm = (minDist / 1000).toFixed(0);
+    document.getElementById('pegel-station-label').innerText =
+      `NOAA — ${closest.name} (${distKm} km)`;
+
+    // Fetch HW/NW predictions for today + tomorrow (hilo interval)
+    const today = new Date();
+    const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+    const fmt = d => `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+    const predUrl =
+      `https://api.tidesandcurrents.noaa.gov/api/prod/datagetter` +
+      `?begin_date=${fmt(today)}&end_date=${fmt(tomorrow)}` +
+      `&station=${closest.id}&product=predictions&datum=MLLW` +
+      `&time_zone=lst_ldt&interval=hilo&units=metric&format=json`;
+
+    const r2 = await fetch(predUrl);
+    if (!r2.ok) throw new Error('NOAA predictions failed');
+    const j2 = await r2.json();
+
+    if (j2.error) throw new Error(j2.error.message || 'NOAA error');
+    const preds = j2.predictions || [];
+    if (!preds.length) throw new Error('no predictions');
+
+    // Current water level (6-min data)
+    const wlUrl =
+      `https://api.tidesandcurrents.noaa.gov/api/prod/datagetter` +
+      `?date=latest&station=${closest.id}&product=water_level` +
+      `&datum=MLLW&time_zone=lst_ldt&units=metric&format=json`;
+
+    let currentCm = null;
+    try {
+      const r3 = await fetch(wlUrl);
+      const j3 = await r3.json();
+      if (j3.data && j3.data[0]) currentCm = Math.round(parseFloat(j3.data[0].v) * 100);
+    } catch(e) { /* predictions only */ }
+
+    // Show current level or note it's prediction-only
+    const pegelEl = document.getElementById('pegel-val');
+    if (currentCm !== null) {
+      pegelEl.innerText = currentCm;
+    } else {
+      pegelEl.innerText = '~';
+    }
+
+    // Trend from predictions (compare upcoming values)
+    const now = Date.now();
+    const upcoming = preds
+      .map(p => ({ t: new Date(p.t).getTime(), v: parseFloat(p.v), type: p.type }))
+      .sort((a,b) => a.t - b.t);
+
+    // Next HW and NW after now
+    const futureHW = upcoming.find(p => p.type === 'H' && p.t > now);
+    const futureNW = upcoming.find(p => p.type === 'L' && p.t > now);
+
+    const trendEl  = document.getElementById('pegel-trend');
+    const trendLbl = document.getElementById('pegel-trend-label');
+
+    // Determine trend: which comes next?
+    if (futureHW && futureNW) {
+      if (futureNW.t < futureHW.t) {
+        trendEl.innerText='↓'; trendEl.style.color='#f87171'; trendLbl.innerText='Fallend';
+      } else {
+        trendEl.innerText='↑'; trendEl.style.color='#34d399'; trendLbl.innerText='Steigend';
+      }
+    } else {
+      trendEl.innerText='→'; trendEl.style.color='#94a3b8'; trendLbl.innerText='Stabil';
+    }
+
+    // Show next event
+    const nextEvent = futureHW && futureNW
+      ? (futureHW.t < futureNW.t ? futureHW : futureNW)
+      : (futureHW || futureNW);
+
+    const nextColor = nextEvent?.type === 'H' ? '#38bdf8' : '#818cf8';
+    const nextTypeEl = document.getElementById('pegel-next-type');
+    nextTypeEl.innerText = nextEvent?.type === 'H' ? 'HW' : 'NW';
+    nextTypeEl.style.color = nextColor;
+    document.getElementById('pegel-next-val').innerText =
+      nextEvent ? Math.round(nextEvent.v * 100) + 'cm' : '—';
+    document.getElementById('pegel-next-time').innerText =
+      nextEvent ? 'ca. ' + fmtTide(new Date(nextEvent.t).toISOString()) : '—';
+
+  } catch(e) {
+    console.warn('NOAA error:', e.message);
+    document.getElementById('pegel-station-label').innerText = 'NOAA — Umstieg auf Modell';
+    fetchMarineTide(lat, lng);
+  }
+}
+
+// Last-resort fallback: Open-Meteo marine model (no station data)
 async function fetchMarineTide(lat, lng) {
   try {
     document.getElementById('pegel-station-label').innerText = 'Meeresspiegel — Globales Modell';
     const url = `https://marine-api.open-meteo.com/v1/marine?latitude=${lat}&longitude=${lng}&hourly=sea_level&timezone=auto&forecast_days=1`;
     const r = await fetch(url); const d = await r.json();
-    const val = d.hourly.sea_level[new Date().getHours()];
-    document.getElementById('pegel-val').innerText = Math.round(val * 100); // m → cm
+    const val = d.hourly?.sea_level?.[new Date().getHours()];
+    if (val == null) throw new Error('no data');
+    document.getElementById('pegel-val').innerText = Math.round(val * 100);
     document.getElementById('pegel-trend').innerText = '~';
     document.getElementById('pegel-trend-label').innerText = 'Modell';
     document.getElementById('pegel-next-type').innerText = '—';
-    document.getElementById('pegel-next-val').innerText = 'International';
+    document.getElementById('pegel-next-val').innerText = 'Globales Modell';
     document.getElementById('pegel-next-time').innerText = '';
   } catch(e) {
     document.getElementById('pegel-val').innerText = 'N/A';
+    document.getElementById('pegel-station-label').innerText = 'Pegel — Nicht verfügbar';
   }
 }
 
-// Shared renderer for Pegelonline measurement data
-function renderPegelData(data) {
+// Shared renderer for Pegelonline/eHYD measurement data
+// showTides: true = show HW/NW prediction, false = inland water (no tides)
+function renderPegelData(data, showTides) {
+  // Default: check GPS position if not explicitly passed
+  if (showTides === undefined) {
+    const pos = lastGpsLatLng;
+    showTides = pos ? isTidalWater(pos.lat, pos.lng) : false;
+  }
+
   const current = data[data.length-1].value;
   document.getElementById('pegel-val').innerText = current;
 
   const trendEl = document.getElementById('pegel-trend');
   const trendLbl = document.getElementById('pegel-trend-label');
 
-  // Use last 8 readings (~40 min) to detect direction and turning point
-  // Pegelonline gives readings every 5 minutes
+  // Trend detection from last 8 readings (~40 min)
   const tail = data.slice(-8).map(d => d.value);
-
-  // Short-term delta: last 15 min (3 readings)
-  const shortDelta = tail[tail.length-1] - tail[tail.length-4];
-  // Medium delta: last 35 min
+  const shortDelta = tail[tail.length-1] - (tail[tail.length-4] ?? tail[0]);
   const longDelta  = tail[tail.length-1] - tail[0];
-
-  // Detect turning point: was rising/falling but now reversed AND total movement small
-  const wasRising  = longDelta > 8;
-  const wasFalling = longDelta < -8;
-  const nowSlowing = Math.abs(shortDelta) < 4; // nearly flat in last 15 min
+  const wasRising  = longDelta > 8, wasFalling = longDelta < -8;
+  const nowSlowing = Math.abs(shortDelta) < 4;
   const nearTurn   = (wasRising || wasFalling) && nowSlowing;
-
-  // Also check: last 3 readings form a local peak/trough
   const last3 = tail.slice(-3);
   const isPeak   = last3[1] >= last3[0] && last3[1] >= last3[2];
   const isTrough = last3[1] <= last3[0] && last3[1] <= last3[2];
 
-  if (isPeak || isTrough || nearTurn) {
+  if (showTides && (isPeak || isTrough || nearTurn)) {
     trendEl.innerText='↔'; trendEl.style.color='#f59e0b'; trendLbl.innerText='Kentert';
   } else if (shortDelta > 4) {
     trendEl.innerText='↑'; trendEl.style.color='#34d399'; trendLbl.innerText='Steigend';
@@ -929,43 +1097,106 @@ function renderPegelData(data) {
     trendEl.innerText='→'; trendEl.style.color='#94a3b8'; trendLbl.innerText='Stabil';
   }
 
-  // Find last HW and NW peaks in data window
+  // ── HW/NW only for tidal waters ──────────────────────────────────────────
+  const nextTypeEl  = document.getElementById('pegel-next-type');
+  const nextValEl   = document.getElementById('pegel-next-val');
+  const nextTimeEl  = document.getElementById('pegel-next-time');
+  const nextLblEl   = document.querySelector('[style*="Nächstes"]') ||
+                      nextTypeEl.previousElementSibling;
+
+  if (!showTides) {
+    // Inland / non-tidal: hide HW/NW column, show water level context instead
+    nextTypeEl.innerText  = '~';
+    nextTypeEl.style.color = '#94a3b8';
+    nextValEl.innerText   = 'Kein Tidenhub';
+    nextTimeEl.innerText  = 'Binnengewässer';
+    return;
+  }
+
+  // Tidal: find peaks and troughs
   const win=12;
   let peaks=[], troughs=[];
   for(let i=win; i<data.length-win; i++){
     const v=data[i].value, sl=data.slice(i-win,i+win+1).map(m=>m.value);
-    if(v===Math.max(...sl)) peaks.push({val:v, ts:new Date(data[i].timestamp).getTime(), time:fmtTide(data[i].timestamp)});
-    else if(v===Math.min(...sl)) troughs.push({val:v, ts:new Date(data[i].timestamp).getTime(), time:fmtTide(data[i].timestamp)});
+    if(v===Math.max(...sl)) peaks.push({val:v, ts:new Date(data[i].timestamp).getTime()});
+    else if(v===Math.min(...sl)) troughs.push({val:v, ts:new Date(data[i].timestamp).getTime()});
   }
+
+  // Validate tidal range — if HW-NW < 30cm it's probably not tidal
+  const hwVal = peaks.length   ? peaks[peaks.length-1].val   : null;
+  const nwVal = troughs.length ? troughs[troughs.length-1].val: null;
+  if (hwVal !== null && nwVal !== null && (hwVal - nwVal) < 30) {
+    nextTypeEl.innerText  = '~';
+    nextTypeEl.style.color = '#94a3b8';
+    nextValEl.innerText   = 'Geringer Hub';
+    nextTimeEl.innerText  = `Δ ${hwVal - nwVal} cm`;
+    return;
+  }
+
   const lastHW = peaks.length   ? peaks[peaks.length-1]   : null;
   const lastNW = troughs.length ? troughs[troughs.length-1]: null;
-  const TIDE_HALF = 745/2 * 60000; // ~6h 12min in ms
+  const TIDE_HALF = 745/2 * 60000;
 
-  // Helper: advance estimated tide time by full cycles until it's in the future
   function nextFutureTide(baseTsMs) {
-    const FULL_CYCLE = 745 * 60000; // ~12h 25min
+    const FULL_CYCLE = 745 * 60000;
     let t = baseTsMs + TIDE_HALF;
-    const now = Date.now();
-    while (t < now) t += FULL_CYCLE;
+    while (t < Date.now()) t += FULL_CYCLE;
     return t;
   }
 
-  let nextType, nextTime;
+  // ── Smart next-event logic ────────────────────────────────────────────────
+  // The window-based peak finder misses very recent peaks (last ~1h) because
+  // it needs readings on both sides. Use the trend direction as tiebreaker:
+  // if currently rising → next event is HW; if falling → next event is NW.
+
+  let nextType, nextTs;
+
   if (lastHW && lastNW) {
-    if (lastHW.ts > lastNW.ts) {
-      nextType='NW'; nextTime=fmtTide(new Date(nextFutureTide(lastHW.ts)).toISOString());
+    const mostRecentPeak = lastHW.ts > lastNW.ts ? 'HW' : 'NW';
+
+    // Check if trend contradicts the peak-based prediction
+    // e.g. lastHW is most recent but we're currently rising → must have passed NW since then
+    const currentlyRising  = longDelta > 5;
+    const currentlyFalling = longDelta < -5;
+
+    if (mostRecentPeak === 'HW') {
+      // After HW → should be falling toward NW
+      if (currentlyRising) {
+        // We're rising despite lastHW being most recent → NW already passed, next is HW
+        nextType='HW'; nextTs=nextFutureTide(lastNW.ts);
+      } else {
+        nextType='NW'; nextTs=nextFutureTide(lastHW.ts);
+      }
     } else {
-      nextType='HW'; nextTime=fmtTide(new Date(nextFutureTide(lastNW.ts)).toISOString());
+      // After NW → should be rising toward HW
+      if (currentlyFalling) {
+        // We're falling despite lastNW being most recent → HW already passed, next is NW
+        nextType='NW'; nextTs=nextFutureTide(lastHW.ts);
+      } else {
+        nextType='HW'; nextTs=nextFutureTide(lastNW.ts);
+      }
     }
-  } else if (lastHW) { nextType='NW'; nextTime=fmtTide(new Date(nextFutureTide(lastHW.ts)).toISOString()); }
-  else if (lastNW)   { nextType='HW'; nextTime=fmtTide(new Date(nextFutureTide(lastNW.ts)).toISOString()); }
-  else               { nextType='—'; nextTime=''; }
+  } else if (lastHW) {
+    nextType = longDelta > 5 ? 'HW' : 'NW';
+    nextTs = nextFutureTide(lastHW.ts);
+  } else if (lastNW) {
+    nextType = longDelta < -5 ? 'NW' : 'HW';
+    nextTs = nextFutureTide(lastNW.ts);
+  } else {
+    nextType='—'; nextTs=null;
+  }
 
   const nextColor = nextType==='HW' ? '#38bdf8' : '#818cf8';
-  document.getElementById('pegel-next-type').innerText   = nextType;
-  document.getElementById('pegel-next-type').style.color  = nextColor;
-  document.getElementById('pegel-next-val').innerText    = nextType==='HW' ? (lastHW?lastHW.val+'cm':'~') : (lastNW?lastNW.val+'cm':'~');
-  document.getElementById('pegel-next-time').innerText   = 'ca. '+nextTime;
+  nextTypeEl.innerText   = nextType;
+  nextTypeEl.style.color  = nextColor;
+  // Show estimated level: use last known value of same type as approximation
+  // but only if it's plausible (NW should be < current, HW should be > current)
+  const currentVal = data[data.length-1].value;
+  let estVal = null;
+  if (nextType==='HW' && hwVal && hwVal > currentVal) estVal = hwVal+'cm';
+  else if (nextType==='NW' && nwVal && nwVal < currentVal) estVal = nwVal+'cm';
+  nextValEl.innerText = estVal || '~';
+  nextTimeEl.innerText   = nextTs ? 'ca. '+fmtTide(new Date(nextTs).toISOString()) : '—';
 }
 
 function fmtTide(ts){
