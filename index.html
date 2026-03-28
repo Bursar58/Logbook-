@@ -1067,15 +1067,38 @@ async function fetchMarineTide(lat, lng) {
 //   - Diurnal-Erkennung (>20h) mit 24h-Snap
 
 const _tidalModel = {
-  period:     12.42 * 3600000, // M2-Basis ms
-  phase:      0,               // letztes HW-Timestamp (Referenz)
-  amplitude:  null,            // Halbamplitude cm (aus gemessenen Peaks/Troughs)
-  meanLevel:  null,            // Mittelwasser cm
-  phaseOffset: 0,              // Windstau-Korrektur ms, EMA-geglättet
-  diurnal:    false,           // 24h-Modus
-  lastCalib:  0,               // letzter Kalibrierzeitpunkt ms
-  frozen:     false,           // true = Confidence-Sperre aktiv
+  period:     12.42 * 3600000,
+  phase:      0,
+  amplitude:  null,
+  meanLevel:  null,
+  phaseOffset: 0,
+  diurnal:    false,
+  lastCalib:  0,
+  frozen:     false,
 };
+
+// Ausreißer-Filter für Rohdaten: entfernt Spikes die > 3× IQR vom Median abweichen
+function _filterOutliers(values) {
+  if (values.length < 4) return values;
+  const sorted = [...values].sort((a,b) => a-b);
+  const q1  = sorted[Math.floor(sorted.length * 0.25)];
+  const q3  = sorted[Math.floor(sorted.length * 0.75)];
+  const iqr = q3 - q1;
+  const lo  = q1 - 3 * iqr;
+  const hi  = q3 + 3 * iqr;
+  return values.map(v => (v < lo || v > hi) ? null : v);
+}
+
+// Bereinigt Datenpunkte: ersetzt Ausreißer durch interpolierten Nachbarwert
+function _cleanData(data) {
+  const vals    = data.map(d => d.value);
+  const filtered = _filterOutliers(vals);
+  return data.map((d, i) => ({
+    ...d,
+    value: filtered[i] !== null ? filtered[i]
+           : (filtered[i-1] ?? filtered[i+1] ?? d.value)
+  }));
+}
 
 // Gleitender Durchschnitt
 function _movAvg(arr, n) {
@@ -1104,12 +1127,14 @@ function _nextExtremum(afterTs) {
   const lastTroughTs = lastPeakTs + HALF;
 
   // Sammle alle Extrema in nächsten 2 Zyklen
+  const hwModelVal = m.meanLevel + m.amplitude;
+  const nwModelVal = m.meanLevel - m.amplitude;
   const candidates = [];
   for (let k = -1; k <= 3; k++) {
     const hw = lastPeakTs + k * T;
     const nw = lastTroughTs + k * T;
-    if (hw > afterTs)  candidates.push({ type: 'HW', ts: hw,  val: m.meanLevel + m.amplitude });
-    if (nw > afterTs)  candidates.push({ type: 'NW', ts: nw,  val: m.meanLevel - m.amplitude });
+    if (hw > afterTs)  candidates.push({ type: 'HW', ts: hw, val: hwModelVal });
+    if (nw > afterTs)  candidates.push({ type: 'NW', ts: nw, val: nwModelVal });
   }
   candidates.sort((a, b) => a.ts - b.ts);
   return candidates[0] || null;
@@ -1206,6 +1231,18 @@ function renderPegelData(data, showTides) {
   if (showTides === undefined) {
     const pos = lastGpsLatLng;
     showTides = pos ? isTidalWater(pos.lat, pos.lng) : false;
+  }
+
+  // ── Ausreißer bereinigen BEVOR irgendeine Berechnung ─────────────────────
+  // Entfernt Sensor-Spikes (z.B. 808 cm bei normalem Hamburg-Hub ~350 cm)
+  data = _cleanData(data);
+
+  // Modell-Sanity-Check: wenn Amplitude implausibel → zurücksetzen
+  if (_tidalModel.amplitude !== null && _tidalModel.amplitude > 500) {
+    _tidalModel.amplitude  = null;
+    _tidalModel.meanLevel  = null;
+    _tidalModel.lastCalib  = 0;
+    _tidalModel.phaseOffset = 0;
   }
 
   const current = data[data.length-1].value;
