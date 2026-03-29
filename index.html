@@ -13,28 +13,6 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<!-- dialog polyfill for older iOS Safari / iPad (no-op on modern browsers) -->
-<script>
-(function(){
-  // Lightweight inline polyfill — only activates if showModal is missing
-  if (typeof HTMLDialogElement !== 'undefined' && HTMLDialogElement.prototype.showModal) return;
-  document.addEventListener('DOMContentLoaded', function() {
-    document.querySelectorAll('dialog').forEach(function(dlg) {
-      dlg.showModal = function() {
-        this.setAttribute('open','');
-        this.style.cssText='display:flex;flex-direction:column;position:fixed;inset:0;margin:auto;z-index:6000;';
-        var bd=document.createElement('div');
-        bd.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:5999;';
-        bd.id='dlg-bd-'+this.id; document.body.appendChild(bd);
-      };
-      dlg.close = function() {
-        this.removeAttribute('open'); this.style.display='';
-        var bd=document.getElementById('dlg-bd-'+this.id); if(bd) bd.remove();
-      };
-    });
-  });
-})();
-</script>
 
 <style>
   :root {
@@ -76,10 +54,8 @@
   body.day-mode #toast { background: #0f172a; color: #fff; }
   body.day-mode .fab-group { filter: brightness(0.92) saturate(1.1); }
 
-  /* Smooth transition — scoped, NOT body * (would throttle GPS/map updates) */
-  nav, .glass-tile, dialog, .fab-group {
-    transition: background-color 0.3s ease, color 0.2s ease, border-color 0.3s ease;
-  }
+  /* Smooth transition beim Wechsel */
+  body, body * { transition: background-color 0.3s ease, color 0.2s ease, border-color 0.3s ease; }
 
 
 
@@ -604,8 +580,8 @@ let trackingStartId = 0; // incremented each start to cancel stale timeouts
 let tripActive = false, tripStartTime = null, tripPoints = [];
 let lastSavedPoint = null, trackingReady = false;
 let tripEvents = [];
-let crewList = lsGet('crew_list', []);
-let vesselInfo = lsGet('vessel_info', null);
+let crewList = JSON.parse(localStorage.getItem('crew_list') || '[]');
+let vesselInfo = JSON.parse(localStorage.getItem('vessel_info') || 'null');
 let currentWeather = null;
 
 let lastEnvUpdate = 0;  // throttle env calls
@@ -615,37 +591,6 @@ let revertTimer = null;       // handle for 30s revert countdown
 let revertInterval = null;    // countdown interval
 let lastGpsLatLng = null;     // stored for revert
 const { jsPDF } = window.jspdf;
-
-// ── LOCALSTORAGE SAFE WRAPPER ──────────────────────────────────────────────
-// All writes go through here. On QuotaExceededError the user is notified
-// gracefully and the app continues running.
-function lsSet(key, value) {
-  try {
-    localStorage.setItem(key, value);
-    return true;
-  } catch (e) {
-    if (e.name === 'QuotaExceededError' || e.code === 22 || e.code === 1014) {
-      // Show toast instead of crashing
-      showToast('⚠ Speicher voll! Bitte alte GPS-Daten unter LOG löschen.');
-      console.warn('localStorage quota exceeded for key:', key);
-    } else {
-      console.error('localStorage error:', e);
-    }
-    return false;
-  }
-}
-
-// Safe JSON.parse — never throws, returns fallback on any error
-function lsGet(key, fallback) {
-  try {
-    const raw = localStorage.getItem(key);
-    if (raw === null || raw === undefined) return fallback;
-    return JSON.parse(raw);
-  } catch (e) {
-    console.warn('localStorage parse error for key:', key, e);
-    return fallback;
-  }
-}
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
 window.onload = () => {
@@ -674,7 +619,7 @@ function toast(msg, dur=3000) {
 
 // ── GPX EXPORT ────────────────────────────────────────────────────────────────
 function exportGPX(idx) {
-  const logs = lsGet('boat_logs', []);
+  const logs = JSON.parse(localStorage.getItem('boat_logs') || '[]');
   const trip = logs[idx]; if (!trip) return;
 
   const pts = trip.route || [];
@@ -686,17 +631,17 @@ function exportGPX(idx) {
 
   // Waypoints aus Ereignissen
   const wpts = (trip.events || []).filter(e => e.lat && e.lng).map(e => `  <wpt lat="${e.lat.toFixed(6)}" lon="${e.lng.toFixed(6)}">
-    <name>${esc(e.type)} ${esc(e.note||'')}</name>
-    <time>${new Date(e.ts||trip.start).toISOString()}</time>
-  </wpt>`).join('
+    <name>${esc(e.type)} ${esc(e.note||'')}<\/name>
+    <time>${new Date(e.ts||trip.start).toISOString()}<\/time>
+  <\/wpt>`).join('
 ');
 
   // Track-Punkte
   const trkpts = pts.map(p => {
     const t = p.ts ? new Date(p.ts).toISOString() : startIso;
     return `      <trkpt lat="${p.lat.toFixed(6)}" lon="${p.lng.toFixed(6)}">
-        <time>${t}</time>
-      </trkpt>`;
+        <time>${t}<\/time>
+      <\/trkpt>`;
   }).join('
 ');
 
@@ -706,17 +651,17 @@ function exportGPX(idx) {
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
   xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">
   <metadata>
-    <name>${name}</name>
-    <time>${startIso}</time>
-  </metadata>
+    <name>${name}<\/name>
+    <time>${startIso}<\/time>
+  <\/metadata>
 ${wpts}
   <trk>
-    <name>${name}</name>
+    <name>${name}<\/name>
     <trkseg>
 ${trkpts}
-    </trkseg>
-  </trk>
-</gpx>`;
+    <\/trkseg>
+  <\/trk>
+<\/gpx>`;
 
   // Download
   const blob = new Blob([gpx], { type: 'application/gpx+xml' });
@@ -737,21 +682,7 @@ function switchTab(id) {
   if (id === 'map') setTimeout(() => myMap.invalidateSize(), 200);
 }
 
-function fmtTime(ts) {
-  const d = new Date(ts);
-  // Always show timezone abbreviation so ambiguous DST hours (02:xx exists twice
-  // during Winterzeit changeover in late October) are distinguishable in logs/PDF
-  const time = d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-  const tz   = d.toLocaleTimeString('de-DE', { timeZoneName: 'short' }).split(' ').pop();
-  // Only append TZ label during the ambiguous hour (01:00-03:00 UTC in late Oct)
-  // For simplicity: always show for night hours, skip daytime clutter
-  const hour = d.getUTCHours();
-  const month = d.getUTCMonth(); // 9 = October
-  if (month === 9 && hour >= 0 && hour <= 2) {
-    return time + ' ' + tz; // narrow no-break space before MEZ/MESZ
-  }
-  return time;
-}
+function fmtTime(ts) { return new Date(ts).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}); }
 function fmtDate(ts) { return new Date(ts).toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'}); }
 
 function formatSpeed(mps) {
@@ -761,7 +692,7 @@ function formatSpeed(mps) {
 
 function toggleSpeedUnit() {
   speedUnit = speedUnit === 'kn' ? 'kmh' : 'kn';
-  lsSet('speed_unit', speedUnit);
+  localStorage.setItem('speed_unit', speedUnit);
   document.getElementById('sog-unit').innerText  = speedUnit === 'kn' ? 'kn' : 'km/h';
   document.getElementById('sog-label').innerText = speedUnit === 'kn' ? 'SOG' : 'Geschw.';
   toast(speedUnit === 'kn' ? 'Knoten (kn)' : 'Kilometer/Stunde');
@@ -783,11 +714,7 @@ function startGps() {
   if (!navigator.geolocation) {
     document.getElementById('pos-display').innerText = 'GPS nicht verfügbar'; return;
   }
-  // Clear any existing watch before creating a new one (prevents duplicate watchers)
-  if (watchId !== undefined && watchId !== null) {
-    navigator.geolocation.clearWatch(watchId);
-    watchId = null;
-  }
+  if (watchId != null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
   watchId = navigator.geolocation.watchPosition(pos => {
     const { latitude, longitude, speed, heading } = pos.coords;
     const rawSpeed = speed || 0;
@@ -797,8 +724,8 @@ function startGps() {
     const lng = toDDM(longitude, false);
 
     document.getElementById('pos-display').innerHTML =
-      `<div>${lat.ddm}</div><div style="font-size:11px;color:var(--text-muted);margin-bottom:5px;">${lat.dec}°</div>` +
-      `<div>${lng.ddm}</div><div style="font-size:11px;color:var(--text-muted);">${lng.dec}°</div>`;
+      `<div>${lat.ddm}<\/div><div style="font-size:11px;color:var(--text-muted);margin-bottom:5px;">${lat.dec}°<\/div>` +
+      `<div>${lng.ddm}<\/div><div style="font-size:11px;color:var(--text-muted);">${lng.dec}°<\/div>`;
     document.getElementById('sog-val').innerText = sog;
     document.getElementById('sog-unit').innerText = speedUnit === 'kn' ? 'kn' : 'km/h';
     document.getElementById('sog-label').innerText = speedUnit === 'kn' ? 'SOG' : 'Geschw.';
@@ -900,9 +827,9 @@ function confirmSave() {
   const trip={name,start:tripStartTime,end:Date.now(),
     points:tripPoints, dist:document.getElementById('trip-dist').innerText,
     events:[...tripEvents], crew:[...crewList], weather:currentWeather};
-  let logs=lsGet('boat_logs', []);
+  let logs=JSON.parse(localStorage.getItem('boat_logs')||'[]');
   logs.push(trip);
-  lsSet('boat_logs', JSON.stringify(logs));
+  localStorage.setItem('boat_logs',JSON.stringify(logs));
   document.getElementById('save-dialog').close();
   toast('Fahrt gespeichert ✓');
   renderLog();
@@ -923,13 +850,13 @@ function confirmEvent() {
 
   if(ev.lat) {
     L.marker([ev.lat,ev.lng],{
-      icon:L.divIcon({className:'',html:`<div style="font-size:22px;line-height:1;">${icon}</div>`,iconAnchor:[11,11]})
-    }).bindPopup(`<b>${fmtTime(ev.ts)}</b><br>${text}`).addTo(myMap);
+      icon:L.divIcon({className:'',html:`<div style="font-size:22px;line-height:1;">${icon}<\/div>`,iconAnchor:[11,11]})
+    }).bindPopup(`<b>${fmtTime(ev.ts)}<\/b><br>${text}`).addTo(myMap);
   }
 
   const li=document.createElement('div');
   li.className='event-item';
-  li.innerHTML=`<span class="event-icon">${icon}</span><div><span class="event-time">${fmtTime(ev.ts)}</span><br>${text}</div>`;
+  li.innerHTML=`<span class="event-icon">${icon}<\/span><div><span class="event-time">${fmtTime(ev.ts)}<\/span><br>${text}<\/div>`;
   document.getElementById('live-event-list').prepend(li);
   document.getElementById('event-dialog').close();
   toast('Ereignis eingetragen ✓');
@@ -945,20 +872,20 @@ function openCrew() {
 function addCrewMember() {
   const n=document.getElementById('crew-name-input').value.trim();
   if(!n) return;
-  crewList.push(n); lsSet('crew_list', JSON.stringify(crewList));
+  crewList.push(n); localStorage.setItem('crew_list',JSON.stringify(crewList));
   document.getElementById('crew-name-input').value='';
   renderCrewTags();
 }
 
 function removeCrewMember(i) {
-  crewList.splice(i,1); lsSet('crew_list', JSON.stringify(crewList));
+  crewList.splice(i,1); localStorage.setItem('crew_list',JSON.stringify(crewList));
   renderCrewTags();
 }
 
 function renderCrewTags() {
   const c=document.getElementById('crew-tags');
   if(!crewList.length){c.innerHTML='<span style="color:var(--text-muted);font-size:13px;">Keine Crew eingetragen</span>';return;}
-  c.innerHTML=crewList.map((n,i)=>`<span class="crew-tag">${n}<button onclick="removeCrewMember(${i})">✕</button></span>`).join('');
+  c.innerHTML=crewList.map((n,i)=>`<span class="crew-tag">${n}<button onclick="removeCrewMember(${i})">✕<\/button><\/span>`).join('');
 }
 
 // ── UMWELT — HYBRID PEGEL + WETTER ───────────────────────────────────────────
@@ -1679,37 +1606,29 @@ function renderPegelData(data, showTides) {
   }
 }
 function fmtTide(ts){
-  const d = new Date(ts);
-  const today = new Date().toLocaleDateString('de-DE');
-  const time  = d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-  // Append MEZ/MESZ during ambiguous Winterzeit hour (Oct, UTC 00-02)
-  const hour = d.getUTCHours(), month = d.getUTCMonth();
-  const tzSuffix = (month === 9 && hour >= 0 && hour <= 2)
-    ? ' ' + d.toLocaleTimeString('de-DE', { timeZoneName: 'short' }).split(' ').pop()
-    : '';
-  const prefix = d.toLocaleDateString('de-DE') === today ? '' : 'Gestern ';
-  return prefix + time + tzSuffix;
+  const d=new Date(ts),today=new Date().toLocaleDateString();
+  return(d.toLocaleDateString()===today?'':'Gestern ')+d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
 }
 
 // ── MARITIME INTELLIGENCE MODULE ──────────────────────────────────────────────
 const KVR_WIND_AMBER=20, KVR_WIND_RED=34, KVR_WAVE_AMBER=1.5, KVR_WAVE_RED=3.0;
 
 const weatherIcons = {
-  'clear-day':`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32l1.41 1.41M2 12h2m16 0h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>`,
-  'clear-night':`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>`,
-  'partly-cloudy-day':`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="3" opacity="0.4"/><path opacity="0.4" d="M10 4v1.5M10 14.5V16M4 10h1.5M14.5 10H16M5.64 5.64l1.06 1.06M13.3 13.3l1.06 1.06"/><path d="M17.5 21h-9a4.5 4.5 0 0 1-.5-8.97A5.5 5.5 0 0 1 17.5 21z"/></svg>`,
-  'partly-cloudy-night':`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path opacity="0.4" d="M9 3a5 5 0 0 0 5 5 4 4 0 0 1-5-5Z"/><path d="M17.5 21h-9a4.5 4.5 0 0 1-.5-8.97A5.5 5.5 0 0 1 17.5 21z"/></svg>`,
-  'cloudy':`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 21h-9a4.5 4.5 0 0 1-.5-8.97A5.5 5.5 0 0 1 17.5 21z"/></svg>`,
-  'overcast':`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 17.58A5 5 0 0 0 18 8h-1.26A8 8 0 1 0 4 15.25"/><path d="M16 22H6a4 4 0 0 1 0-8h12a3 3 0 0 1 0 6z"/></svg>`,
-  'drizzle':`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19h-9a4.5 4.5 0 0 1-.5-8.97A5.5 5.5 0 0 1 17.5 19z"/><path d="M8 21v1M12 21v1M16 21v1"/></svg>`,
-  'rain':`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19h-9a4.5 4.5 0 0 1-.5-8.97A5.5 5.5 0 0 1 17.5 19z"/><path d="M8 20l-1 3M12 20l-1 3M16 20l-1 3"/></svg>`,
-  'heavy-rain':`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19h-9a4.5 4.5 0 0 1-.5-8.97A5.5 5.5 0 0 1 17.5 19z"/><path d="M7 20l-1.5 3M11 20l-1.5 3M15 20l-1.5 3M19 20l-1.5 3"/></svg>`,
-  'snow':`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19h-9a4.5 4.5 0 0 1-.5-8.97A5.5 5.5 0 0 1 17.5 19z"/><path d="M8 21v2M8 22h-1.5M8 22h1.5M14 21v2M14 22h-1.5M14 22h1.5"/></svg>`,
-  'thunderstorm':`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19h-9a4.5 4.5 0 0 1-.5-8.97A5.5 5.5 0 0 1 17.5 19z"/><polyline points="13,19 10.5,23 13.5,23 10,27" stroke="#f59e0b" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
-  'fog':`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h16M4 12h16M4 16h16M7 20h10"/></svg>`,
-  'wind':`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17.7 7.7a2.5 2.5 0 1 1 1.8 4.3H2M9.6 4.6A2 2 0 1 1 11 8H2M12.6 19.4A2 2 0 1 0 14 16H2"/></svg>`,
-  'warning-amber':`<svg viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`,
-  'warning-red':`<svg viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`,
+  'clear-day':`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32l1.41 1.41M2 12h2m16 0h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/><\/svg>`,
+  'clear-night':`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/><\/svg>`,
+  'partly-cloudy-day':`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="3" opacity="0.4"/><path opacity="0.4" d="M10 4v1.5M10 14.5V16M4 10h1.5M14.5 10H16M5.64 5.64l1.06 1.06M13.3 13.3l1.06 1.06"/><path d="M17.5 21h-9a4.5 4.5 0 0 1-.5-8.97A5.5 5.5 0 0 1 17.5 21z"/><\/svg>`,
+  'partly-cloudy-night':`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path opacity="0.4" d="M9 3a5 5 0 0 0 5 5 4 4 0 0 1-5-5Z"/><path d="M17.5 21h-9a4.5 4.5 0 0 1-.5-8.97A5.5 5.5 0 0 1 17.5 21z"/><\/svg>`,
+  'cloudy':`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 21h-9a4.5 4.5 0 0 1-.5-8.97A5.5 5.5 0 0 1 17.5 21z"/><\/svg>`,
+  'overcast':`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 17.58A5 5 0 0 0 18 8h-1.26A8 8 0 1 0 4 15.25"/><path d="M16 22H6a4 4 0 0 1 0-8h12a3 3 0 0 1 0 6z"/><\/svg>`,
+  'drizzle':`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19h-9a4.5 4.5 0 0 1-.5-8.97A5.5 5.5 0 0 1 17.5 19z"/><path d="M8 21v1M12 21v1M16 21v1"/><\/svg>`,
+  'rain':`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19h-9a4.5 4.5 0 0 1-.5-8.97A5.5 5.5 0 0 1 17.5 19z"/><path d="M8 20l-1 3M12 20l-1 3M16 20l-1 3"/><\/svg>`,
+  'heavy-rain':`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19h-9a4.5 4.5 0 0 1-.5-8.97A5.5 5.5 0 0 1 17.5 19z"/><path d="M7 20l-1.5 3M11 20l-1.5 3M15 20l-1.5 3M19 20l-1.5 3"/><\/svg>`,
+  'snow':`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19h-9a4.5 4.5 0 0 1-.5-8.97A5.5 5.5 0 0 1 17.5 19z"/><path d="M8 21v2M8 22h-1.5M8 22h1.5M14 21v2M14 22h-1.5M14 22h1.5"/><\/svg>`,
+  'thunderstorm':`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19h-9a4.5 4.5 0 0 1-.5-8.97A5.5 5.5 0 0 1 17.5 19z"/><polyline points="13,19 10.5,23 13.5,23 10,27" stroke="#f59e0b" fill="none" stroke-linecap="round" stroke-linejoin="round"/><\/svg>`,
+  'fog':`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h16M4 12h16M4 16h16M7 20h10"/><\/svg>`,
+  'wind':`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17.7 7.7a2.5 2.5 0 1 1 1.8 4.3H2M9.6 4.6A2 2 0 1 1 11 8H2M12.6 19.4A2 2 0 1 0 14 16H2"/><\/svg>`,
+  'warning-amber':`<svg viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/><\/svg>`,
+  'warning-red':`<svg viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/><\/svg>`,
 };
 
 function _wxMap(code, isDay) {
@@ -1800,7 +1719,7 @@ async function fetchWeather(lat, lng) {
 
 // ── LOG ───────────────────────────────────────────────────────────────────────
 function renderLog() {
-  const logs=lsGet('boat_logs', []);
+  const logs=JSON.parse(localStorage.getItem('boat_logs')||'[]');
   const list=document.getElementById('log-list');
   if(!logs.length){
     list.innerHTML='<div style="color:var(--text-muted);font-size:14px;text-align:center;margin-top:40px;">Noch keine Fahrten gespeichert.</div>';
@@ -1811,26 +1730,26 @@ function renderLog() {
     let durStr='';
     if(l.end){const dur=Math.round((l.end-l.start)/60000);durStr=`${Math.floor(dur/60)}h ${dur%60}min`;}
     const crewStr=l.crew&&l.crew.length?l.crew.join(' · '):'Keine Crew';
-    const evCount=l.events&&l.events.length?`<div style="font-size:11px;color:var(--text-muted);">📋 ${l.events.length} Ereignis${l.events.length!==1?'se':''}</div>`:'';
+    const evCount=l.events&&l.events.length?`<div style="font-size:11px;color:var(--text-muted);">📋 ${l.events.length} Ereignis${l.events.length!==1?'se':''}<\/div>`:'';
     const hasGps = l.route && l.route.length > 0;
     return `<div class="trip-card">
       <div onclick="exportTripPDF(${origIdx})" style="cursor:pointer;">
-        <div class="font-bebas" style="color:var(--accent);font-size:20px;">${l.name}</div>
-        <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${fmtDate(l.start)} &nbsp;·&nbsp; ${l.dist} nm${durStr?' &nbsp;·&nbsp; '+durStr:''}</div>
-        <div style="font-size:11px;color:var(--text-muted);margin-top:3px;">👥 ${crewStr}</div>
+        <div class="font-bebas" style="color:var(--accent);font-size:20px;">${l.name}<\/div>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${fmtDate(l.start)} &nbsp;·&nbsp; ${l.dist} nm${durStr?' &nbsp;·&nbsp; '+durStr:''}<\/div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:3px;">👥 ${crewStr}<\/div>
         ${evCount}
-      </div>
+      <\/div>
       <div style="display:flex;gap:8px;margin-top:10px;">
-        <button onclick="exportTripPDF(${origIdx})" style="flex:1;background:rgba(56,189,248,0.1);border:1px solid var(--tile-border);color:var(--accent);border-radius:8px;padding:7px 0;font-size:11px;font-weight:600;cursor:pointer;">📄 PDF</button>
+        <button onclick="exportTripPDF(${origIdx})" style="flex:1;background:rgba(56,189,248,0.1);border:1px solid var(--tile-border);color:var(--accent);border-radius:8px;padding:7px 0;font-size:11px;font-weight:600;cursor:pointer;">📄 PDF<\/button>
         ${hasGps ? `<button onclick="exportGPX(${origIdx})" style="flex:1;background:rgba(52,211,153,0.1);border:1px solid rgba(52,211,153,0.3);color:#34d399;border-radius:8px;padding:7px 0;font-size:11px;font-weight:600;cursor:pointer;">🗺 GPX</button>` : ''}
-      </div>
-    </div>`;
+      <\/div>
+    <\/div>`;
   }).join('');
 }
 
 // ── PDF EXPORT ────────────────────────────────────────────────────────────────
 async function exportTripPDF(idx) {
-  const logs=lsGet('boat_logs', []);
+  const logs=JSON.parse(localStorage.getItem('boat_logs')||'[]');
   const trip=logs[idx]; if(!trip) return;
   document.getElementById('pdf-overlay').classList.add('show');
 
@@ -2071,11 +1990,11 @@ function renderStationList(stations) {
   document.getElementById('station-list').innerHTML = sorted.slice(0, 80).map(s => `
     <div class="station-item ${s.uuid===activeId?'active-station':''}" onclick="selectStation('${s.uuid}')">
       <div>
-        <div class="station-name">${s.longname || s.shortname}</div>
-        <div class="station-river">${s.water?.longname || ''}</div>
-      </div>
-      <div class="station-dist">${s._dist < 1000 ? Math.round(s._dist)+'m' : (s._dist/1000).toFixed(0)+'km'}</div>
-    </div>`).join('');
+        <div class="station-name">${s.longname || s.shortname}<\/div>
+        <div class="station-river">${s.water?.longname || ''}<\/div>
+      <\/div>
+      <div class="station-dist">${s._dist < 1000 ? Math.round(s._dist)+'m' : (s._dist/1000).toFixed(0)+'km'}<\/div>
+    <\/div>`).join('');
 }
 
 function selectStation(uuid) {
@@ -2196,7 +2115,7 @@ function initFabDrag() {
     if (!dragging) return;
     dragging = false;
     group.style.opacity = '1';
-    lsSet('fab_top', parseInt(group.style.top));
+    localStorage.setItem('fab_top', parseInt(group.style.top));
   }
 
   // ── Touch (passive:false is critical to allow preventDefault on iOS) ──
@@ -2240,7 +2159,7 @@ function saveVessel() {
     port: document.getElementById('vessel-port-input').value.trim(),
     type: document.getElementById('vessel-type-input').value
   };
-  lsSet('vessel_info', JSON.stringify(vesselInfo));
+  localStorage.setItem('vessel_info', JSON.stringify(vesselInfo));
   document.getElementById('vessel-dialog').close();
   renderVesselHeader();
   toast('Gespeichert ✓');
@@ -2271,7 +2190,7 @@ function fmtBytes(bytes) {
 }
 
 function calcStorage() {
-  const raw = JSON.stringify(lsGet('boat_logs', []));
+  const raw = localStorage.getItem('boat_logs') || '[]';
   const logs = JSON.parse(raw);
   const totalBytes = getBytes(raw);
   const maxBytes = 5 * 1024 * 1024; // 5 MB estimate
@@ -2319,38 +2238,38 @@ function renderStorageDialog() {
     const ptCount = (l.points || []).length;
     return `<div class="store-row">
       <div class="store-row-info">
-        <div class="store-row-name">${l.name}</div>
-        <div class="store-row-meta">${fmtDate(l.start)} &nbsp;·&nbsp; ${ptCount} GPS-Punkte &nbsp;·&nbsp; Gesamt: ${fmtBytes(sz.fullBytes)}</div>
-        <div class="store-row-meta" style="color:#f59e0b;">GPS-Daten: ${fmtBytes(sz.ptBytes)}</div>
-      </div>
+        <div class="store-row-name">${l.name}<\/div>
+        <div class="store-row-meta">${fmtDate(l.start)} &nbsp;·&nbsp; ${ptCount} GPS-Punkte &nbsp;·&nbsp; Gesamt: ${fmtBytes(sz.fullBytes)}<\/div>
+        <div class="store-row-meta" style="color:#f59e0b;">GPS-Daten: ${fmtBytes(sz.ptBytes)}<\/div>
+      <\/div>
       <div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end;">
-        <button class="btn-del-gps" onclick="slimGPS(${origIdx})">GPS löschen</button>
-        <button class="btn-del"     onclick="deleteTrip(${origIdx})">Entfernen</button>
-      </div>
-    </div>`;
+        <button class="btn-del-gps" onclick="slimGPS(${origIdx})">GPS löschen<\/button>
+        <button class="btn-del"     onclick="deleteTrip(${origIdx})">Entfernen<\/button>
+      <\/div>
+    <\/div>`;
   }).join('');
 }
 
 function slimGPS(idx) {
-  const logs = lsGet('boat_logs', []);
+  const logs = JSON.parse(localStorage.getItem('boat_logs') || '[]');
   if (!logs[idx]) return;
   const ptCount = (logs[idx].points || []).length;
   if (!confirm(`GPS-Track löschen (${ptCount} Punkte)?
 Fahrtinfo & Ereignisse bleiben erhalten. Kein PDF mit Karte mehr möglich.`)) return;
   logs[idx].points = [];
-  lsSet('boat_logs', JSON.stringify(logs));
+  localStorage.setItem('boat_logs', JSON.stringify(logs));
   toast('GPS-Daten gelöscht ✓');
   renderStorageDialog();
   renderLog();
 }
 
 function deleteTrip(idx) {
-  const logs = lsGet('boat_logs', []);
+  const logs = JSON.parse(localStorage.getItem('boat_logs') || '[]');
   if (!logs[idx]) return;
   if (!confirm(`Fahrt "${logs[idx].name}" komplett löschen?
 Dies kann nicht rückgängig gemacht werden.`)) return;
   logs.splice(idx, 1);
-  lsSet('boat_logs', JSON.stringify(logs));
+  localStorage.setItem('boat_logs', JSON.stringify(logs));
   toast('Fahrt gelöscht ✓');
   renderStorageDialog();
   renderLog();
