@@ -584,8 +584,8 @@ let trackingStartId = 0; // incremented each start to cancel stale timeouts
 let tripActive = false, tripStartTime = null, tripPoints = [];
 let lastSavedPoint = null, trackingReady = false;
 let tripEvents = [];
-let crewList = JSON.parse(localStorage.getItem('crew_list') || '[]');
-let vesselInfo = JSON.parse(localStorage.getItem('vessel_info') || 'null');
+let crewList = lsGet('crew_list', []);
+let vesselInfo = lsGet('vessel_info', null);
 let currentWeather = null;
 
 let lastEnvUpdate = 0;  // throttle env calls
@@ -637,7 +637,7 @@ function toast(msg, dur=3000) {
 
 // ── GPX EXPORT ────────────────────────────────────────────────────────────────
 function exportGPX(idx) {
-  const logs = JSON.parse(localStorage.getItem('boat_logs') || '[]');
+  const logs = lsGet('boat_logs', []);
   const trip = logs[idx]; if (!trip) return;
 
   const pts = trip.route || [];
@@ -710,7 +710,7 @@ function formatSpeed(mps) {
 
 function toggleSpeedUnit() {
   speedUnit = speedUnit === 'kn' ? 'kmh' : 'kn';
-  localStorage.setItem('speed_unit', speedUnit);
+  lsSet('speed_unit', speedUnit);
   document.getElementById('sog-unit').innerText  = speedUnit === 'kn' ? 'kn' : 'km/h';
   document.getElementById('sog-label').innerText = speedUnit === 'kn' ? 'SOG' : 'Geschw.';
   toast(speedUnit === 'kn' ? 'Knoten (kn)' : 'Kilometer/Stunde');
@@ -845,9 +845,9 @@ function confirmSave() {
   const trip={name,start:tripStartTime,end:Date.now(),
     points:tripPoints, dist:document.getElementById('trip-dist').innerText,
     events:[...tripEvents], crew:[...crewList], weather:currentWeather};
-  let logs=JSON.parse(localStorage.getItem('boat_logs')||'[]');
+  let logs=lsGet('boat_logs', []);
   logs.push(trip);
-  localStorage.setItem('boat_logs',JSON.stringify(logs));
+  lsSet('boat_logs', JSON.stringify(logs));
   document.getElementById('save-dialog').close();
   toast('Fahrt gespeichert ✓');
   renderLog();
@@ -890,13 +890,13 @@ function openCrew() {
 function addCrewMember() {
   const n=document.getElementById('crew-name-input').value.trim();
   if(!n) return;
-  crewList.push(n); localStorage.setItem('crew_list',JSON.stringify(crewList));
+  crewList.push(n); lsSet('crew_list', JSON.stringify(crewList));
   document.getElementById('crew-name-input').value='';
   renderCrewTags();
 }
 
 function removeCrewMember(i) {
-  crewList.splice(i,1); localStorage.setItem('crew_list',JSON.stringify(crewList));
+  crewList.splice(i,1); lsSet('crew_list', JSON.stringify(crewList));
   renderCrewTags();
 }
 
@@ -1737,7 +1737,7 @@ async function fetchWeather(lat, lng) {
 
 // ── LOG ───────────────────────────────────────────────────────────────────────
 function renderLog() {
-  const logs=JSON.parse(localStorage.getItem('boat_logs')||'[]');
+  const logs=lsGet('boat_logs', []);
   const list=document.getElementById('log-list');
   if(!logs.length){
     list.innerHTML='<div style="color:var(--text-muted);font-size:14px;text-align:center;margin-top:40px;">Noch keine Fahrten gespeichert.</div>';
@@ -1767,7 +1767,7 @@ function renderLog() {
 
 // ── PDF EXPORT ────────────────────────────────────────────────────────────────
 async function exportTripPDF(idx) {
-  const logs=JSON.parse(localStorage.getItem('boat_logs')||'[]');
+  const logs=lsGet('boat_logs', []);
   const trip=logs[idx]; if(!trip) return;
   document.getElementById('pdf-overlay').classList.add('show');
 
@@ -2133,7 +2133,7 @@ function initFabDrag() {
     if (!dragging) return;
     dragging = false;
     group.style.opacity = '1';
-    localStorage.setItem('fab_top', parseInt(group.style.top));
+    lsSet('fab_top', parseInt(group.style.top));
   }
 
   // ── Touch (passive:false is critical to allow preventDefault on iOS) ──
@@ -2177,7 +2177,7 @@ function saveVessel() {
     port: document.getElementById('vessel-port-input').value.trim(),
     type: document.getElementById('vessel-type-input').value
   };
-  localStorage.setItem('vessel_info', JSON.stringify(vesselInfo));
+  lsSet('vessel_info', JSON.stringify(vesselInfo));
   document.getElementById('vessel-dialog').close();
   renderVesselHeader();
   toast('Gespeichert ✓');
@@ -2208,7 +2208,7 @@ function fmtBytes(bytes) {
 }
 
 function calcStorage() {
-  const raw = localStorage.getItem('boat_logs') || '[]';
+  const raw = JSON.stringify(lsGet('boat_logs', []));
   const logs = JSON.parse(raw);
   const totalBytes = getBytes(raw);
   const maxBytes = 5 * 1024 * 1024; // 5 MB estimate
@@ -2269,25 +2269,25 @@ function renderStorageDialog() {
 }
 
 function slimGPS(idx) {
-  const logs = JSON.parse(localStorage.getItem('boat_logs') || '[]');
+  const logs = lsGet('boat_logs', []);
   if (!logs[idx]) return;
   const ptCount = (logs[idx].points || []).length;
   if (!confirm(`GPS-Track löschen (${ptCount} Punkte)?
 Fahrtinfo & Ereignisse bleiben erhalten. Kein PDF mit Karte mehr möglich.`)) return;
   logs[idx].points = [];
-  localStorage.setItem('boat_logs', JSON.stringify(logs));
+  lsSet('boat_logs', JSON.stringify(logs));
   toast('GPS-Daten gelöscht ✓');
   renderStorageDialog();
   renderLog();
 }
 
 function deleteTrip(idx) {
-  const logs = JSON.parse(localStorage.getItem('boat_logs') || '[]');
+  const logs = lsGet('boat_logs', []);
   if (!logs[idx]) return;
   if (!confirm(`Fahrt "${logs[idx].name}" komplett löschen?
 Dies kann nicht rückgängig gemacht werden.`)) return;
   logs.splice(idx, 1);
-  localStorage.setItem('boat_logs', JSON.stringify(logs));
+  lsSet('boat_logs', JSON.stringify(logs));
   toast('Fahrt gelöscht ✓');
   renderStorageDialog();
   renderLog();
