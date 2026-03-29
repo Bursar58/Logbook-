@@ -13,6 +13,28 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<!-- dialog polyfill for older iOS Safari / iPad (no-op on modern browsers) -->
+<script>
+(function(){
+  // Lightweight inline polyfill — only activates if showModal is missing
+  if (typeof HTMLDialogElement !== 'undefined' && HTMLDialogElement.prototype.showModal) return;
+  document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('dialog').forEach(function(dlg) {
+      dlg.showModal = function() {
+        this.setAttribute('open','');
+        this.style.cssText='display:flex;flex-direction:column;position:fixed;inset:0;margin:auto;z-index:6000;';
+        var bd=document.createElement('div');
+        bd.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:5999;';
+        bd.id='dlg-bd-'+this.id; document.body.appendChild(bd);
+      };
+      dlg.close = function() {
+        this.removeAttribute('open'); this.style.display='';
+        var bd=document.getElementById('dlg-bd-'+this.id); if(bd) bd.remove();
+      };
+    });
+  });
+})();
+</script>
 
 <style>
   :root {
@@ -54,8 +76,10 @@
   body.day-mode #toast { background: #0f172a; color: #fff; }
   body.day-mode .fab-group { filter: brightness(0.92) saturate(1.1); }
 
-  /* Smooth transition beim Wechsel */
-  body, body * { transition: background-color 0.3s ease, color 0.2s ease, border-color 0.3s ease; }
+  /* Smooth transition — scoped, NOT body * (would throttle GPS/map updates) */
+  nav, .glass-tile, dialog, .fab-group {
+    transition: background-color 0.3s ease, color 0.2s ease, border-color 0.3s ease;
+  }
 
 
 
@@ -91,7 +115,7 @@
     position: fixed; right: 20px; top: 200px;
     display: flex; flex-direction: column; gap: 6px;
     z-index: 1000; align-items: center;
-    touch-action: none; user-select: none;
+    user-select: none;
     background: rgba(2, 6, 23, 0.15);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
@@ -580,8 +604,8 @@ let trackingStartId = 0; // incremented each start to cancel stale timeouts
 let tripActive = false, tripStartTime = null, tripPoints = [];
 let lastSavedPoint = null, trackingReady = false;
 let tripEvents = [];
-let crewList = JSON.parse(localStorage.getItem('crew_list') || '[]');
-let vesselInfo = JSON.parse(localStorage.getItem('vessel_info') || 'null');
+let crewList = lsGet('crew_list', []);
+let vesselInfo = lsGet('vessel_info', null);
 let currentWeather = null;
 
 let lastEnvUpdate = 0;  // throttle env calls
@@ -591,6 +615,37 @@ let revertTimer = null;       // handle for 30s revert countdown
 let revertInterval = null;    // countdown interval
 let lastGpsLatLng = null;     // stored for revert
 const { jsPDF } = window.jspdf;
+
+// ── LOCALSTORAGE SAFE WRAPPER ──────────────────────────────────────────────
+// All writes go through here. On QuotaExceededError the user is notified
+// gracefully and the app continues running.
+function lsSet(key, value) {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch (e) {
+    if (e.name === 'QuotaExceededError' || e.code === 22 || e.code === 1014) {
+      // Show toast instead of crashing
+      showToast('⚠ Speicher voll! Bitte alte GPS-Daten unter LOG löschen.');
+      console.warn('localStorage quota exceeded for key:', key);
+    } else {
+      console.error('localStorage error:', e);
+    }
+    return false;
+  }
+}
+
+// Safe JSON.parse — never throws, returns fallback on any error
+function lsGet(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw === null || raw === undefined) return fallback;
+    return JSON.parse(raw);
+  } catch (e) {
+    console.warn('localStorage parse error for key:', key, e);
+    return fallback;
+  }
+}
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
 window.onload = () => {
@@ -619,7 +674,7 @@ function toast(msg, dur=3000) {
 
 // ── GPX EXPORT ────────────────────────────────────────────────────────────────
 function exportGPX(idx) {
-  const logs = JSON.parse(localStorage.getItem('boat_logs') || '[]');
+  const logs = lsGet('boat_logs', []);
   const trip = logs[idx]; if (!trip) return;
 
   const pts = trip.route || [];
@@ -682,7 +737,21 @@ function switchTab(id) {
   if (id === 'map') setTimeout(() => myMap.invalidateSize(), 200);
 }
 
-function fmtTime(ts) { return new Date(ts).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}); }
+function fmtTime(ts) {
+  const d = new Date(ts);
+  // Always show timezone abbreviation so ambiguous DST hours (02:xx exists twice
+  // during Winterzeit changeover in late October) are distinguishable in logs/PDF
+  const time = d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+  const tz   = d.toLocaleTimeString('de-DE', { timeZoneName: 'short' }).split(' ').pop();
+  // Only append TZ label during the ambiguous hour (01:00-03:00 UTC in late Oct)
+  // For simplicity: always show for night hours, skip daytime clutter
+  const hour = d.getUTCHours();
+  const month = d.getUTCMonth(); // 9 = October
+  if (month === 9 && hour >= 0 && hour <= 2) {
+    return time + ' ' + tz; // narrow no-break space before MEZ/MESZ
+  }
+  return time;
+}
 function fmtDate(ts) { return new Date(ts).toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'}); }
 
 function formatSpeed(mps) {
@@ -692,7 +761,7 @@ function formatSpeed(mps) {
 
 function toggleSpeedUnit() {
   speedUnit = speedUnit === 'kn' ? 'kmh' : 'kn';
-  localStorage.setItem('speed_unit', speedUnit);
+  lsSet('speed_unit', speedUnit);
   document.getElementById('sog-unit').innerText  = speedUnit === 'kn' ? 'kn' : 'km/h';
   document.getElementById('sog-label').innerText = speedUnit === 'kn' ? 'SOG' : 'Geschw.';
   toast(speedUnit === 'kn' ? 'Knoten (kn)' : 'Kilometer/Stunde');
@@ -713,6 +782,11 @@ function initMap() {
 function startGps() {
   if (!navigator.geolocation) {
     document.getElementById('pos-display').innerText = 'GPS nicht verfügbar'; return;
+  }
+  // Clear any existing watch before creating a new one (prevents duplicate watchers)
+  if (watchId !== undefined && watchId !== null) {
+    navigator.geolocation.clearWatch(watchId);
+    watchId = null;
   }
   watchId = navigator.geolocation.watchPosition(pos => {
     const { latitude, longitude, speed, heading } = pos.coords;
@@ -826,9 +900,9 @@ function confirmSave() {
   const trip={name,start:tripStartTime,end:Date.now(),
     points:tripPoints, dist:document.getElementById('trip-dist').innerText,
     events:[...tripEvents], crew:[...crewList], weather:currentWeather};
-  let logs=JSON.parse(localStorage.getItem('boat_logs')||'[]');
+  let logs=lsGet('boat_logs', []);
   logs.push(trip);
-  localStorage.setItem('boat_logs',JSON.stringify(logs));
+  lsSet('boat_logs', JSON.stringify(logs));
   document.getElementById('save-dialog').close();
   toast('Fahrt gespeichert ✓');
   renderLog();
@@ -871,13 +945,13 @@ function openCrew() {
 function addCrewMember() {
   const n=document.getElementById('crew-name-input').value.trim();
   if(!n) return;
-  crewList.push(n); localStorage.setItem('crew_list',JSON.stringify(crewList));
+  crewList.push(n); lsSet('crew_list', JSON.stringify(crewList));
   document.getElementById('crew-name-input').value='';
   renderCrewTags();
 }
 
 function removeCrewMember(i) {
-  crewList.splice(i,1); localStorage.setItem('crew_list',JSON.stringify(crewList));
+  crewList.splice(i,1); lsSet('crew_list', JSON.stringify(crewList));
   renderCrewTags();
 }
 
@@ -1605,8 +1679,16 @@ function renderPegelData(data, showTides) {
   }
 }
 function fmtTide(ts){
-  const d=new Date(ts),today=new Date().toLocaleDateString();
-  return(d.toLocaleDateString()===today?'':'Gestern ')+d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  const d = new Date(ts);
+  const today = new Date().toLocaleDateString('de-DE');
+  const time  = d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+  // Append MEZ/MESZ during ambiguous Winterzeit hour (Oct, UTC 00-02)
+  const hour = d.getUTCHours(), month = d.getUTCMonth();
+  const tzSuffix = (month === 9 && hour >= 0 && hour <= 2)
+    ? ' ' + d.toLocaleTimeString('de-DE', { timeZoneName: 'short' }).split(' ').pop()
+    : '';
+  const prefix = d.toLocaleDateString('de-DE') === today ? '' : 'Gestern ';
+  return prefix + time + tzSuffix;
 }
 
 // ── MARITIME INTELLIGENCE MODULE ──────────────────────────────────────────────
@@ -1718,7 +1800,7 @@ async function fetchWeather(lat, lng) {
 
 // ── LOG ───────────────────────────────────────────────────────────────────────
 function renderLog() {
-  const logs=JSON.parse(localStorage.getItem('boat_logs')||'[]');
+  const logs=lsGet('boat_logs', []);
   const list=document.getElementById('log-list');
   if(!logs.length){
     list.innerHTML='<div style="color:var(--text-muted);font-size:14px;text-align:center;margin-top:40px;">Noch keine Fahrten gespeichert.</div>';
@@ -1748,7 +1830,7 @@ function renderLog() {
 
 // ── PDF EXPORT ────────────────────────────────────────────────────────────────
 async function exportTripPDF(idx) {
-  const logs=JSON.parse(localStorage.getItem('boat_logs')||'[]');
+  const logs=lsGet('boat_logs', []);
   const trip=logs[idx]; if(!trip) return;
   document.getElementById('pdf-overlay').classList.add('show');
 
@@ -2114,7 +2196,7 @@ function initFabDrag() {
     if (!dragging) return;
     dragging = false;
     group.style.opacity = '1';
-    localStorage.setItem('fab_top', parseInt(group.style.top));
+    lsSet('fab_top', parseInt(group.style.top));
   }
 
   // ── Touch (passive:false is critical to allow preventDefault on iOS) ──
@@ -2158,7 +2240,7 @@ function saveVessel() {
     port: document.getElementById('vessel-port-input').value.trim(),
     type: document.getElementById('vessel-type-input').value
   };
-  localStorage.setItem('vessel_info', JSON.stringify(vesselInfo));
+  lsSet('vessel_info', JSON.stringify(vesselInfo));
   document.getElementById('vessel-dialog').close();
   renderVesselHeader();
   toast('Gespeichert ✓');
@@ -2189,7 +2271,7 @@ function fmtBytes(bytes) {
 }
 
 function calcStorage() {
-  const raw = localStorage.getItem('boat_logs') || '[]';
+  const raw = JSON.stringify(lsGet('boat_logs', []));
   const logs = JSON.parse(raw);
   const totalBytes = getBytes(raw);
   const maxBytes = 5 * 1024 * 1024; // 5 MB estimate
@@ -2250,25 +2332,25 @@ function renderStorageDialog() {
 }
 
 function slimGPS(idx) {
-  const logs = JSON.parse(localStorage.getItem('boat_logs') || '[]');
+  const logs = lsGet('boat_logs', []);
   if (!logs[idx]) return;
   const ptCount = (logs[idx].points || []).length;
   if (!confirm(`GPS-Track löschen (${ptCount} Punkte)?
 Fahrtinfo & Ereignisse bleiben erhalten. Kein PDF mit Karte mehr möglich.`)) return;
   logs[idx].points = [];
-  localStorage.setItem('boat_logs', JSON.stringify(logs));
+  lsSet('boat_logs', JSON.stringify(logs));
   toast('GPS-Daten gelöscht ✓');
   renderStorageDialog();
   renderLog();
 }
 
 function deleteTrip(idx) {
-  const logs = JSON.parse(localStorage.getItem('boat_logs') || '[]');
+  const logs = lsGet('boat_logs', []);
   if (!logs[idx]) return;
   if (!confirm(`Fahrt "${logs[idx].name}" komplett löschen?
 Dies kann nicht rückgängig gemacht werden.`)) return;
   logs.splice(idx, 1);
-  localStorage.setItem('boat_logs', JSON.stringify(logs));
+  lsSet('boat_logs', JSON.stringify(logs));
   toast('Fahrt gelöscht ✓');
   renderStorageDialog();
   renderLog();
