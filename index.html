@@ -93,7 +93,6 @@
     position: fixed; right: 20px; top: 200px;
     display: flex; flex-direction: column; gap: 6px;
     z-index: 1000; align-items: center;
-    touch-action: none; user-select: none;
     background: rgba(2, 6, 23, 0.15);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
@@ -2103,67 +2102,62 @@ function clearRevertTimers() {
 
 // ── FAB DRAG ─────────────────────────────────────────────────────────────────
 function initFabDrag() {
-  const group = document.getElementById('fab-group');
+  const group  = document.getElementById('fab-group');
   const handle = document.getElementById('fab-drag-handle');
   if (!group || !handle) return;
 
-  let dragging = false, startY = 0, startTop = 0;
-
-  // Restore saved position — NaN-safe, viewport-clamped
-  const _fabSaved = parseInt(localStorage.getItem('fab_top'));
-  if (!isNaN(_fabSaved) && _fabSaved >= 60 && _fabSaved < window.innerHeight - 200) {
-    group.style.top = _fabSaved + 'px';
+  // Restore position — NaN-safe
+  const _saved = parseInt(localStorage.getItem('fab_top'));
+  if (!isNaN(_saved) && _saved >= 60 && _saved < window.innerHeight - 180) {
+    group.style.top = _saved + 'px';
   } else {
     group.style.top = '200px';
     localStorage.removeItem('fab_top');
   }
 
-  function clamp(val) {
-    return Math.max(10, Math.min(window.innerHeight - group.offsetHeight - 20, val));
-  }
+  let dragging = false, startY = 0, startTop = 0;
 
-  function onStart(y) {
-    dragging = true;
-    startY = y;
+  function clamp(v) {
+    return Math.max(10, Math.min(window.innerHeight - group.offsetHeight - 80, v));
+  }
+  function startDrag(y) {
+    dragging = true; startY = y;
     startTop = group.getBoundingClientRect().top;
     group.style.transition = 'none';
-    group.style.opacity = '0.85';
+    group.style.opacity = '0.8';
   }
-
-  function onMove(y) {
+  function moveDrag(y) {
     if (!dragging) return;
     group.style.top = clamp(startTop + (y - startY)) + 'px';
   }
-
-  function onEnd() {
+  function endDrag() {
     if (!dragging) return;
     dragging = false;
     group.style.opacity = '1';
     lsSet('fab_top', parseInt(group.style.top));
   }
 
-  // ── Touch (passive:false is critical to allow preventDefault on iOS) ──
+  // Touch events — ONLY on the drag handle, not the whole group
   handle.addEventListener('touchstart', e => {
-    onStart(e.touches[0].clientY);
-    e.preventDefault(); // stops page scroll while dragging
-    e.stopPropagation();
-  }, { passive: false, capture: true });
+    startDrag(e.touches[0].clientY);
+    e.stopPropagation(); // don't let it bubble to buttons
+    // NO preventDefault here — let browser decide first
+  }, { passive: true });
 
   handle.addEventListener('touchmove', e => {
-    onMove(e.touches[0].clientY);
-    e.preventDefault();
-  }, { passive: false, capture: true });
+    if (!dragging) return;
+    moveDrag(e.touches[0].clientY);
+    e.preventDefault(); // prevent scroll ONLY during active drag
+  }, { passive: false });
 
-  handle.addEventListener('touchend', onEnd, { passive: true });
-  handle.addEventListener('touchcancel', onEnd, { passive: true });
+  handle.addEventListener('touchend',    endDrag, { passive: true });
+  handle.addEventListener('touchcancel', endDrag, { passive: true });
 
-  // ── Mouse ──
-  handle.addEventListener('mousedown', e => { onStart(e.clientY); e.preventDefault(); });
-  document.addEventListener('mousemove', e => onMove(e.clientY));
-  document.addEventListener('mouseup', onEnd);
+  // Mouse fallback (desktop)
+  handle.addEventListener('mousedown', e => { startDrag(e.clientY); e.preventDefault(); });
+  document.addEventListener('mousemove', e => moveDrag(e.clientY));
+  document.addEventListener('mouseup',   endDrag);
 }
-
-// ── SCHIFF & HEIMATHAFEN ──────────────────────────────────────────────────────
 function openVessel() {
   const v = vesselInfo || {};
   document.getElementById('vessel-name-input').value = v.name || '';
