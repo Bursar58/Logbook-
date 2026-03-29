@@ -141,10 +141,11 @@
     -webkit-backdrop-filter: blur(20px);
     border-top: 1px solid var(--tile-border);
     display: flex; justify-content: space-around; align-items: center;
-    /* safe-area-inset-bottom: Gestenleiste auf Android/iPhone */
     padding: 10px 0 calc(10px + env(safe-area-inset-bottom));
-    z-index: 9000;
+    z-index: 10000;
     pointer-events: auto;
+    touch-action: manipulation;
+    isolation: isolate;
   }
   nav button { background: none; border: none; color: var(--text-muted); font-size: 10px; font-weight: 600; text-transform: uppercase; display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: pointer;   touch-action: manipulation; }
   nav button.active { color: var(--accent); }
