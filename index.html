@@ -60,6 +60,7 @@
 
 
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  button, a, [onclick] { touch-action: manipulation; }
   body {
     margin: 0; font-family: 'Inter', sans-serif;
     background: var(--bg-gradient); color: var(--text-primary);
@@ -91,7 +92,7 @@
     position: fixed; right: 20px; top: 200px;
     display: flex; flex-direction: column; gap: 6px;
     z-index: 1000; align-items: center;
-    user-select: none;
+    touch-action: none; user-select: none;
     background: rgba(2, 6, 23, 0.15);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
@@ -117,6 +118,9 @@
     box-shadow: 0 0 20px rgba(56,189,248,0.4);
     display: flex; align-items: center; justify-content: center;
     cursor: pointer; flex-shrink: 0;
+    position: relative; z-index: 3;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: rgba(56,189,248,0.3);
   }
   .fab.active { background: var(--recording); animation: pulse 1.5s infinite; color: #fff; }
   .fab.fab-event { background: var(--accent2); box-shadow: 0 0 20px rgba(129,140,248,0.4); color: #fff; width: 38px; height: 38px; }
@@ -138,7 +142,7 @@
     padding: 12px 0 calc(12px + env(safe-area-inset-bottom));
     z-index: 999;
   }
-  nav button { background: none; border: none; color: var(--text-muted); font-size: 10px; font-weight: 600; text-transform: uppercase; display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: pointer; }
+  nav button { background: none; border: none; color: var(--text-muted); font-size: 10px; font-weight: 600; text-transform: uppercase; display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: pointer;   touch-action: manipulation; }
   nav button.active { color: var(--accent); }
   nav button svg { width: 22px; height: 22px; fill: currentColor; }
 
@@ -401,7 +405,7 @@
 <!-- FAB GROUP -->
 <div class="fab-group" id="fab-group">
   <div style="position:relative; display:flex; align-items:center; justify-content:center;">
-    <svg width="40" height="40" viewBox="0 0 40 40" style="position:absolute;top:0;left:0;pointer-events:none;z-index:2;">
+    <svg width="40" height="40" viewBox="0 0 40 40" style="position:absolute;top:0;left:0;pointer-events:none;">
       <defs><path id="crewCircle" d="M 20,20 m -13,0 a 13,13 0 1,1 26,0 a 13,13 0 1,1 -26,0"/></defs>
       <text font-family="Inter,sans-serif" font-size="6" font-weight="700" fill="rgba(0,0,0,0.65)" letter-spacing="2.2">
         <textPath href="#crewCircle" startOffset="8%">CREW · CREW · </textPath>
@@ -419,7 +423,7 @@
     </svg>
   </button>
   <div style="position:relative; display:flex; align-items:center; justify-content:center;">
-    <svg width="48" height="48" viewBox="0 0 48 48" style="position:absolute;top:0;left:0;pointer-events:none;z-index:2;">
+    <svg width="48" height="48" viewBox="0 0 48 48" style="position:absolute;top:0;left:0;pointer-events:none;">
       <defs><path id="trackCircle" d="M 24,24 m -16,0 a 16,16 0 1,1 32,0 a 16,16 0 1,1 -32,0"/></defs>
       <text font-family="Inter,sans-serif" font-size="6.5" font-weight="700" fill="rgba(0,0,0,0.7)" letter-spacing="2">
         <textPath href="#trackCircle" startOffset="6%">TRACK · TRACK · </textPath>
@@ -591,6 +595,20 @@ let revertTimer = null;       // handle for 30s revert countdown
 let revertInterval = null;    // countdown interval
 let lastGpsLatLng = null;     // stored for revert
 const { jsPDF } = window.jspdf;
+
+// ── LOCALSTORAGE SAFE WRAPPER ─────────────────────────────────────────────
+function lsSet(key, value) {
+  try { localStorage.setItem(key, value); return true; }
+  catch (e) {
+    if (e.name === 'QuotaExceededError' || e.code === 22 || e.code === 1014)
+      showToast('⚠ Speicher voll! Bitte alte GPS-Daten unter LOG löschen.');
+    return false;
+  }
+}
+function lsGet(key, fallback) {
+  try { const r=localStorage.getItem(key); return r===null?fallback:JSON.parse(r); }
+  catch(e) { return fallback; }
+}
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
 window.onload = () => {
