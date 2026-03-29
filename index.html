@@ -7,6 +7,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#020617">
+<link rel="manifest" href="./manifest.json">
 <title>Logbuch Glass Cockpit</title>
 
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Mono:wght@400;700&family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
@@ -136,11 +137,14 @@
 
   nav {
     position: fixed; bottom: 0; left: 0; right: 0;
-    background: rgba(2,6,23,0.9); backdrop-filter: blur(10px);
+    background: rgba(2,6,23,0.95); backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
     border-top: 1px solid var(--tile-border);
-    display: flex; justify-content: space-around;
-    padding: 12px 0 calc(12px + env(safe-area-inset-bottom));
-    z-index: 999;
+    display: flex; justify-content: space-around; align-items: center;
+    /* safe-area-inset-bottom: Gestenleiste auf Android/iPhone */
+    padding: 10px 0 calc(10px + env(safe-area-inset-bottom));
+    z-index: 9000;
+    pointer-events: auto;
   }
   nav button { background: none; border: none; color: var(--text-muted); font-size: 10px; font-weight: 600; text-transform: uppercase; display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: pointer;   touch-action: manipulation; }
   nav button.active { color: var(--accent); }
@@ -697,7 +701,7 @@ function switchTab(id) {
   document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
   document.getElementById(id).classList.add('active');
   document.getElementById('btn-' + id).classList.add('active');
-  if (id === 'map') setTimeout(() => myMap.invalidateSize(), 200);
+  if (id === 'map') setTimeout(() => { try { myMap.invalidateSize(); } catch(e){} }, 100);
 }
 
 function fmtTime(ts) { return new Date(ts).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}); }
@@ -2297,43 +2301,14 @@ Dies kann nicht rückgängig gemacht werden.`)) return;
 </script>
 
 <script>
-// ── OFFLINE CACHE (direkt, kein Service Worker) ───────────────────────────────
-// Speichert die App beim ersten Laden im Browser-Cache.
-// Funktioniert auf GitHub Pages ohne separate Dateien.
-(async function() {
-  if (!('caches' in window)) return;
-  try {
-    const CACHE = 'logbuch-v2';
-    const cache = await caches.open(CACHE);
-    const url   = window.location.href.split('?')[0].split('#')[0];
-
-    // Alte Cache-Versionen aufräumen
-    const keys = await caches.keys();
-    await Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)));
-
-    // Aktuelle Seite cachen (stille Hintergrundoperation)
-    const resp = await fetch(url, {cache: 'no-store'}).catch(() => null);
-    if (resp && resp.ok) {
-      await cache.put(url, resp);
-      console.log('Logbuch offline verfügbar gespeichert ✓');
-    }
-
-    // Leaflet + jsPDF cachen für vollständige Offline-Funktion
-    const externals = [
-      'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
-      'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
-      'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
-    ];
-    await Promise.allSettled(externals.map(async url => {
-      if (!(await cache.match(url))) {
-        const r = await fetch(url).catch(() => null);
-        if (r && r.ok) await cache.put(url, r);
-      }
-    }));
-  } catch(e) {
-    console.warn('Cache-Fehler (kein Problem):', e);
-  }
-})();
+// Fix 4: Service Worker Registration für echtes Offline
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./service-worker.js')
+      .then(r => console.log('SW aktiv:', r.scope))
+      .catch(e => console.warn('SW Fehler:', e));
+  });
+}
 </script>
 </body>
 </html>
